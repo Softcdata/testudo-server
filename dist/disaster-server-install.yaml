@@ -1,0 +1,174 @@
+---
+# Source: disaster-server/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: disaster-system
+  name: disaster-server
+  labels:
+    helm.sh/chart: disaster-server-0.1.0
+    app.kubernetes.io/name: disaster-server
+    app.kubernetes.io/instance: disaster-server
+    app.kubernetes.io/version: 0.0.1
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+---
+# Source: disaster-server/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: disaster-system
+  name: disaster-server
+  labels:
+    helm.sh/chart: disaster-server-0.1.0
+    app.kubernetes.io/name: disaster-server
+    app.kubernetes.io/instance: disaster-server
+    app.kubernetes.io/version: 0.0.1
+    app.kubernetes.io/managed-by: Helm
+data:
+  config.yaml: |
+    server:
+      host: "0.0.0.0"
+      port: 8081
+    log:
+      level: debug
+    jwt:
+      secret: "your-secret-key"
+      timeout: 24h
+      access_expire: 24h
+      refresh_expire: 168h
+---
+# Source: disaster-server/templates/serviceaccount.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  namespace: disaster-system
+  name: disaster-server
+  labels:
+    helm.sh/chart: disaster-server-0.1.0
+    app.kubernetes.io/name: disaster-server
+    app.kubernetes.io/instance: disaster-server
+    app.kubernetes.io/version: 0.0.1
+    app.kubernetes.io/managed-by: Helm
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+# Source: disaster-server/templates/serviceaccount.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  namespace: disaster-system
+  name: disaster-server
+  labels:
+    helm.sh/chart: disaster-server-0.1.0
+    app.kubernetes.io/name: disaster-server
+    app.kubernetes.io/instance: disaster-server
+    app.kubernetes.io/version: 0.0.1
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+subjects:
+  - kind: ServiceAccount
+    name: disaster-server
+    namespace: disaster-system
+roleRef:
+  kind: ClusterRole
+  name: disaster-server
+  apiGroup: rbac.authorization.k8s.io
+---
+# Source: disaster-server/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: disaster-system
+  name: disaster-server
+  labels: 
+    helm.sh/chart: disaster-server-0.1.0
+    app.kubernetes.io/name: disaster-server
+    app.kubernetes.io/instance: disaster-server
+    app.kubernetes.io/version: 0.0.1
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: NodePort
+  ports:
+    - port: 8081
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector: 
+    app.kubernetes.io/name: disaster-server
+    app.kubernetes.io/instance: disaster-server
+---
+# Source: disaster-server/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: disaster-system
+  name: disaster-server
+  labels:
+    helm.sh/chart: disaster-server-0.1.0
+    app.kubernetes.io/name: disaster-server
+    app.kubernetes.io/instance: disaster-server
+    app.kubernetes.io/version: 0.0.1
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: disaster-server
+      app.kubernetes.io/instance: disaster-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: disaster-server
+        app.kubernetes.io/instance: disaster-server
+      annotations:
+        {}
+    spec:
+      serviceAccountName: disaster-server
+      imagePullSecrets:
+        - name: default-secret
+      containers:
+        - name: disaster-server
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+          image: "swr.cn-east-3.myhuaweicloud.com/chenmou/disaster-server:v1.0.0-arm64"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs/config.yaml
+              subPath: config.yaml
+          resources:
+            {}
+      volumes:
+        - name: config
+          configMap:
+            name: disaster-server
+      nodeSelector:
+        {}
+      affinity:
+        {}
+      tolerations:
+        []

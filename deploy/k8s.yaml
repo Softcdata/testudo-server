@@ -1,0 +1,135 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: disaster-server-config
+  namespace: disaster-system
+data:
+  config.yaml: |
+    server:
+      host: "0.0.0.0"
+      port: 8080
+    log:
+      level: debug
+    jwt:
+      secret: "change-me-generate-a-strong-secret"
+      timeout: 24h
+      access_expire: 24h
+      refresh_expire: 168h
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: disaster-server
+  namespace: disaster-system
+  labels:
+    app: disaster-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: disaster-server
+  strategy:
+      type: Recreate  
+  template:
+    metadata:
+      labels:
+        app: disaster-server
+    spec:
+      serviceAccountName: disaster-server-sa
+      hostNetwork: true
+      containers:
+      - name: disaster-server
+        image: 192.0.2.172:5100/disaster-server:v0.1
+        ports:
+        - containerPort: 8080
+        env:
+        - name: TZ
+          value: Asia/Shanghai
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/configs
+      volumes:
+      - name: config-volume
+        configMap:
+          name: disaster-server-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: disaster-server-service
+  namespace: disaster-system
+spec:
+  selector:
+    app: disaster-server
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: disaster-server-sa
+  namespace: disaster-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: disaster-server-role
+rules:
+- apiGroups:
+  - testudo.softcdata.com
+  resources:
+  - disasterconfigs
+  - clusters
+  - storagerepositories
+  - appbackups
+  - apprestores
+  - disasterpolicies
+  - disasterjobs
+  - disasterbackups
+  - backuppolicies
+  - backuprestorestatisticses
+  - disastergroups
+  - disasterinstances
+  - disasteroperations
+  - datasyncs
+  - resourcesyncs
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - create
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: disaster-server-rb
+subjects:
+- kind: ServiceAccount
+  name: disaster-server-sa
+  namespace: disaster-system
+roleRef:
+  kind: ClusterRole
+  name: disaster-server-role
+  apiGroup: rbac.authorization.k8s.io

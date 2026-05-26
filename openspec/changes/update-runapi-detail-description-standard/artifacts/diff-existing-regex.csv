@@ -1,0 +1,133 @@
+key,server_module,server_path,runapi_target_ids,runapi_names,runapi_folders
+GET /apis/resources.testudo.softcdata.com/v1/:resource,Kubernetes 资源,/apis/resources.testudo.softcdata.com/v1/:resource,25559f2338c0c8,获取,容灾云平台 / V1 / K8S资源
+GET /apis/v1/:resource/:name/history,事件与历史,/apis/v1/:resource/:name/history,1be82b9e38801001,获取指定资源历史记录,容灾云平台 / V1 / 历史事件
+GET /apis/v1/events,事件与历史,/apis/v1/events,1be82b9e13c01001,获取全局历史事件记录,容灾云平台 / V1 / 历史事件
+GET /apis/v1/watch/events,事件与历史,/apis/v1/watch/events,2bc6c1dd38c073,获取全局事件,容灾云平台 / V1
+POST /api/v1/deletion/check,删除检查,/api/v1/deletion/check,1c2f51b2b9801001,删除前依赖检查,容灾云平台 / V1 / 统一删除保护
+GET /apis/storage.testudo.softcdata.com/v1/storages,存储仓库,/apis/storage.testudo.softcdata.com/v1/storages,25559f2238c0b6,列表查询,容灾云平台 / V1 / 存储仓库配置管理
+POST /apis/storage.testudo.softcdata.com/v1/storages,存储仓库,/apis/storage.testudo.softcdata.com/v1/storages,3ee6850638c06f,添加存储仓库,容灾云平台 / V1 / 存储仓库配置管理
+DELETE /apis/storage.testudo.softcdata.com/v1/storages/:name,存储仓库,/apis/storage.testudo.softcdata.com/v1/storages/:name,25559f2338c0c2,删除,容灾云平台 / V1 / 存储仓库配置管理
+GET /apis/storage.testudo.softcdata.com/v1/storages/:name,存储仓库,/apis/storage.testudo.softcdata.com/v1/storages/:name,1be2230920001001 | 25559f2238c0b8,获取存储名称列表 | 获取详情,容灾云平台 / V1 / 存储仓库配置管理
+PATCH /apis/storage.testudo.softcdata.com/v1/storages/:name,存储仓库,/apis/storage.testudo.softcdata.com/v1/storages/:name,1bd50e8b7d801000,更新存储仓库鉴权,容灾云平台 / V1 / 存储仓库配置管理
+PUT /apis/storage.testudo.softcdata.com/v1/storages/:name,存储仓库,/apis/storage.testudo.softcdata.com/v1/storages/:name,3ee6850678c071,编辑存储仓库,容灾云平台 / V1 / 存储仓库配置管理
+GET /apis/storage.testudo.softcdata.com/v1/storages/:name/validate,存储仓库,/apis/storage.testudo.softcdata.com/v1/storages/:name/validate,1bdf92f4e4801000,验证,容灾云平台 / V1 / 存储仓库配置管理
+POST /apis/storage.testudo.softcdata.com/v1/storages/connectivity/validate,存储仓库,/apis/storage.testudo.softcdata.com/v1/storages/connectivity/validate,1bfa8b208a801001,验证存储连通性 (BSL),容灾云平台 / V1 / 存储仓库配置管理
+GET /apis/storage.testudo.softcdata.com/v1/storages/names,存储仓库,/apis/storage.testudo.softcdata.com/v1/storages/names,1be2230920001001,获取存储名称列表,容灾云平台 / V1 / 存储仓库配置管理
+POST /apis/storage.testudo.softcdata.com/v1/storages/validate/connection,存储仓库,/apis/storage.testudo.softcdata.com/v1/storages/validate/connection,6c722f5f8c74b,验证连接,容灾云平台 / V1 / 存储仓库配置管理
+GET /apis/storage.testudo.softcdata.com/v1/watch/storages,存储仓库,/apis/storage.testudo.softcdata.com/v1/watch/storages,263ef8a0b8c07c,事件流(全部),容灾云平台 / V1 / 存储仓库配置管理
+GET /apis/disasterjobs.testudo.softcdata.com/v1/jobs,容灾任务,/apis/disasterjobs.testudo.softcdata.com/v1/jobs,25559f21f8c0a5,列表查询,容灾云平台 / V1 / 任务
+POST /apis/disasterjobs.testudo.softcdata.com/v1/jobs,容灾任务,/apis/disasterjobs.testudo.softcdata.com/v1/jobs,25559f21f8c0aa,创建,容灾云平台 / V1 / 任务
+DELETE /apis/disasterjobs.testudo.softcdata.com/v1/jobs/:name,容灾任务,/apis/disasterjobs.testudo.softcdata.com/v1/jobs/:name,25559f2238c0ad,删除,容灾云平台 / V1 / 任务
+GET /apis/disasterjobs.testudo.softcdata.com/v1/jobs/:name,容灾任务,/apis/disasterjobs.testudo.softcdata.com/v1/jobs/:name,25559f21f8c0a7,获取详情,容灾云平台 / V1 / 任务
+GET /apis/disasterjobs.testudo.softcdata.com/v1/watch/jobs,容灾任务,/apis/disasterjobs.testudo.softcdata.com/v1/watch/jobs,25559f2238c0b0,事件流(全部),容灾云平台 / V1 / 任务
+GET /apis/disasterjobs.testudo.softcdata.com/v1/watch/jobs/:name,容灾任务,/apis/disasterjobs.testudo.softcdata.com/v1/watch/jobs/:name,25559f2238c0b2,事件流(单个),容灾云平台 / V1 / 任务
+GET /apis/disasterinstances.testudo.softcdata.com/v1/instances,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/instances,1c01f46e4f001000,列表查询,容灾云平台 / V2 / 容灾实例配置
+POST /apis/disasterinstances.testudo.softcdata.com/v1/instances,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/instances,1c01f46f55801000,创建实例,容灾云平台 / V2 / 容灾实例配置
+DELETE /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name,1c01f472a2c01000,删除实例,容灾云平台 / V2 / 容灾实例配置
+GET /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name,1c01f470ba401000,获取详情,容灾云平台 / V2 / 容灾实例配置
+PUT /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name,1c01f4718c001000,更新实例,容灾云平台 / V2 / 容灾实例配置
+POST /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/actions,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/actions,1c01fb364ac01000,执行操作 (增强版),容灾云平台 / V2 / 容灾实例配置
+GET /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/history,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/history,1c01f7948bc01000,操作历史记录,容灾云平台 / V2 / 容灾实例配置
+GET /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/operations/:operationName,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/operations/:operationName,1c5ead7bab401001,获取操作详情,容灾云平台 / V2 / 容灾实例配置
+POST /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/restore-classes/validate,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/restore-classes/validate,1c49f6d741801001,校验恢复Class存在性,容灾云平台 / V2 / 容灾实例配置
+GET /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/sync-status,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/sync-status,1c01f74a5e401000,查询同步状态,容灾云平台 / V2 / 容灾实例配置
+GET /apis/disasterinstances.testudo.softcdata.com/v1/watch/instances,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/watch/instances,3b8699c1b8c14b,事件流(全部),容灾云平台 / V2 / 容灾实例配置
+GET /apis/disasterinstances.testudo.softcdata.com/v1/watch/instances/:name,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/watch/instances/:name,3b86fa34f8c221,事件流(单个),容灾云平台 / V2 / 容灾实例配置
+GET /apis/disasterinstances.testudo.softcdata.com/v1/watch/instances/operations/:operationName,容灾实例,/apis/disasterinstances.testudo.softcdata.com/v1/watch/instances/operations/:operationName,1c5eadf4f1801001,操作事件流(单个),容灾云平台 / V2 / 容灾实例配置
+GET /apis/disasterdrills.testudo.softcdata.com/v1/drills,容灾演练,/apis/disasterdrills.testudo.softcdata.com/v1/drills,1c0aec042dc01001,列表查询,容灾云平台 / V2 / 容灾演练 (Drill)
+POST /apis/disasterdrills.testudo.softcdata.com/v1/drills,容灾演练,/apis/disasterdrills.testudo.softcdata.com/v1/drills,1c0aec0a8f401001,创建演练,容灾云平台 / V2 / 容灾演练 (Drill)
+DELETE /apis/disasterdrills.testudo.softcdata.com/v1/drills/:name,容灾演练,/apis/disasterdrills.testudo.softcdata.com/v1/drills/:name,1c0aec15e5001001,删除演练,容灾云平台 / V2 / 容灾演练 (Drill)
+GET /apis/disasterdrills.testudo.softcdata.com/v1/drills/:name,容灾演练,/apis/disasterdrills.testudo.softcdata.com/v1/drills/:name,1c0aec0a6cc01001,获取详情,容灾云平台 / V2 / 容灾演练 (Drill)
+POST /apis/disasterdrills.testudo.softcdata.com/v1/drills/:name/cleanup,容灾演练,/apis/disasterdrills.testudo.softcdata.com/v1/drills/:name/cleanup,1c28bf2907c01000,清理演练,容灾云平台 / V2 / 容灾演练 (Drill)
+POST /apis/disasterdrills.testudo.softcdata.com/v1/drills/:name/confirm,容灾演练,/apis/disasterdrills.testudo.softcdata.com/v1/drills/:name/confirm,1c0aec15bc001001,确认执行,容灾云平台 / V2 / 容灾演练 (Drill)
+POST /apis/disasterdrills.testudo.softcdata.com/v1/drills/:name/restart,容灾演练,/apis/disasterdrills.testudo.softcdata.com/v1/drills/:name/restart,1c0c8731f1401001,重跑演练,容灾云平台 / V2 / 容灾演练 (Drill)
+GET /apis/disasterdrills.testudo.softcdata.com/v1/drills/actions/protected-namespaces,容灾演练,/apis/disasterdrills.testudo.softcdata.com/v1/drills/actions/protected-namespaces,1c380061ca801001,查询受保护命名空间,容灾云平台 / V2 / 容灾演练 (Drill)
+GET /apis/disasterdrills.testudo.softcdata.com/v1/watch/drills,容灾演练,/apis/disasterdrills.testudo.softcdata.com/v1/watch/drills,477a33c78c1c8,事件流(全部),容灾云平台 / V2 / 容灾演练 (Drill)
+GET /apis/disasterdrills.testudo.softcdata.com/v1/watch/drills/:name,容灾演练,/apis/disasterdrills.testudo.softcdata.com/v1/watch/drills/:name,477bda678c1cb,事件流(单个),容灾云平台 / V2 / 容灾演练 (Drill)
+GET /apis/policies.testudo.softcdata.com/v1/policies,容灾策略,/apis/policies.testudo.softcdata.com/v1/policies,35ec1a7278c00b,列表查询,容灾云平台 / V1 / 策略配置
+POST /apis/policies.testudo.softcdata.com/v1/policies,容灾策略,/apis/policies.testudo.softcdata.com/v1/policies,3ee6850638c06a,创建容灾策略,容灾云平台 / V1 / 策略配置
+DELETE /apis/policies.testudo.softcdata.com/v1/policies/:name,容灾策略,/apis/policies.testudo.softcdata.com/v1/policies/:name,35ec1a7378c012,删除,容灾云平台 / V1 / 策略配置
+GET /apis/policies.testudo.softcdata.com/v1/policies/:name,容灾策略,/apis/policies.testudo.softcdata.com/v1/policies/:name,35ec1a72b8c00c | 1be2230900401001,获取详情 | 获取策略名称列表,容灾云平台 / V1 / 策略配置
+PUT /apis/policies.testudo.softcdata.com/v1/policies/:name,容灾策略,/apis/policies.testudo.softcdata.com/v1/policies/:name,1c721610dc401001 | 3ee6850638c06c,更新 AutoBackup 策略（传播到 Velero Schedule） | 更新容灾策略,容灾云平台 / V1 / 策略配置
+GET /apis/policies.testudo.softcdata.com/v1/policies/names,容灾策略,/apis/policies.testudo.softcdata.com/v1/policies/names,1be2230900401001,获取策略名称列表,容灾云平台 / V1 / 策略配置
+GET /apis/disastergroups.testudo.softcdata.com/v1/groups,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/groups,1c048e6aa6401000,查询列表,容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+POST /apis/disastergroups.testudo.softcdata.com/v1/groups,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/groups,1c048e6950c01000,创建容灾组,容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+DELETE /apis/disastergroups.testudo.softcdata.com/v1/groups/:name,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/groups/:name,1c04bcb222801001,删除容灾组,容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+GET /apis/disastergroups.testudo.softcdata.com/v1/groups/:name,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/groups/:name,1c048e6d34001000 | 1c20cb43ab001001,获取详情 | 实例选择器列表,容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+PUT /apis/disastergroups.testudo.softcdata.com/v1/groups/:name,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/groups/:name,1c239548ddc01000,更新容灾组,容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+POST /apis/disastergroups.testudo.softcdata.com/v1/groups/:name/actions,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/groups/:name/actions,1c048e6d67c01000,执行组操作,容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+GET /apis/disastergroups.testudo.softcdata.com/v1/groups/:name/history,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/groups/:name/history,1c04e21a5c801001,获取组操作历史,容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+GET /apis/disastergroups.testudo.softcdata.com/v1/groups/:name/instances,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/groups/:name/instances,1c2100948fc01001,容灾组已选实例列表,容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+GET /apis/disastergroups.testudo.softcdata.com/v1/groups/:name/operations/:operationName,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/groups/:name/operations/:operationName,1c5ead7bcb801001,获取组操作详情,容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+GET /apis/disastergroups.testudo.softcdata.com/v1/groups/instance-picker,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/groups/instance-picker,1c20cb43ab001001,实例选择器列表,容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+GET /apis/disastergroups.testudo.softcdata.com/v1/watch/groups/operations,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/operations,1a44c9e9f8c0a8,事件流(全部),容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+GET /apis/disastergroups.testudo.softcdata.com/v1/watch/groups/operations/:operationName,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/operations/:operationName,1c5eadf517801001 | 1a44ffeb38c0ab,组操作事件流(单个) | 事件流(单个),容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+GET /apis/disastergroups.testudo.softcdata.com/v1/watch/groups/status,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/status,39a5775f8c2ec,状态事件流(全部),容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+GET /apis/disastergroups.testudo.softcdata.com/v1/watch/groups/status/:name,容灾组,/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/status/:name,39a699978c2f0,状态事件流(单个),容灾云平台 / V2 / 容灾组管理 (Disaster Group)
+GET /apis/disasterconfigs.testudo.softcdata.com/v1/configs,容灾配置,/apis/disasterconfigs.testudo.softcdata.com/v1/configs,25559f2138c090,列表查询,容灾云平台 / V2 / 灾备配置
+POST /apis/disasterconfigs.testudo.softcdata.com/v1/configs,容灾配置,/apis/disasterconfigs.testudo.softcdata.com/v1/configs,3ee68505b8c065,创建容灾配置,容灾云平台 / V2 / 灾备配置
+DELETE /apis/disasterconfigs.testudo.softcdata.com/v1/configs/:name,容灾配置,/apis/disasterconfigs.testudo.softcdata.com/v1/configs/:name,25559f21b8c098,删除,容灾云平台 / V2 / 灾备配置
+GET /apis/disasterconfigs.testudo.softcdata.com/v1/configs/:name,容灾配置,/apis/disasterconfigs.testudo.softcdata.com/v1/configs/:name,25559f2138c092 | 1c304687b0801001,获取详情 | 获取容灾配置名称列表,容灾云平台 / V2 / 灾备配置
+PUT /apis/disasterconfigs.testudo.softcdata.com/v1/configs/:name,容灾配置,/apis/disasterconfigs.testudo.softcdata.com/v1/configs/:name,3ee68505f8c067,更新容灾配置,容灾云平台 / V2 / 灾备配置
+GET /apis/disasterconfigs.testudo.softcdata.com/v1/configs/names,容灾配置,/apis/disasterconfigs.testudo.softcdata.com/v1/configs/names,1c304687b0801001,获取容灾配置名称列表,容灾云平台 / V2 / 灾备配置
+GET /apis/disasterconfigs.testudo.softcdata.com/v1/watch/configs,容灾配置,/apis/disasterconfigs.testudo.softcdata.com/v1/watch/configs,267c3f73f8c40a | 3b831dfe78c08c,事件流(全部) | 事件流(全部),容灾云平台 / V2 / 灾备配置
+GET /apis/disasterconfigs.testudo.softcdata.com/v1/watch/configs/:name,容灾配置,/apis/disasterconfigs.testudo.softcdata.com/v1/watch/configs/:name,267c641278c417,事件流(单个),容灾云平台 / V2 / 灾备配置
+GET /apis/appbackups.testudo.softcdata.com/v1/appbackups,应用备份,/apis/appbackups.testudo.softcdata.com/v1/appbackups,2a25b664f8c042,列表查询,容灾云平台 / V1 / 应用备份
+POST /apis/appbackups.testudo.softcdata.com/v1/appbackups,应用备份,/apis/appbackups.testudo.softcdata.com/v1/appbackups,3ee68503b8c051 | 3efbb43238c57f,创建应用备份（使用策略配置） | 创建应用备份（手动）,容灾云平台 / V1 / 应用备份
+DELETE /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name,应用备份,/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name,2a25b66578c049,删除,容灾云平台 / V1 / 应用备份
+GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name,应用备份,/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name,2a25b664f8c043 | 1be2239988801001,获取详情 | 获取应用备份关联集群,容灾云平台 / V1 / 应用备份
+PUT /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name,应用备份,/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name,3ee6850438c053,更新应用备份,容灾云平台 / V1 / 应用备份
+POST /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/actions/:type,应用备份,/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/actions/:type,1bd135d4c5c01001 | 1bd135d316401001 | 3f0947a838c682 | 3c1cb82178c001 | 1bd135d64b401001,触发取消 | 触发重试 | 暂停pause恢复resume自动备份 | 触发立即备份 | 删除Velero备份,容灾云平台 / V1 / 应用备份 / 应用备份动作
+GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download,应用备份,/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download,1bd135d66a001001,下载备份文件,容灾云平台 / V1 / 应用备份
+GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/history,应用备份,/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/history,1bd4dbb7f4401001,获取备份历史,容灾云平台 / V1 / 应用备份
+GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/clusters,应用备份,/apis/appbackups.testudo.softcdata.com/v1/appbackups/clusters,1be2239988801001,获取应用备份关联集群,容灾云平台 / V1 / 应用备份
+GET /apis/appbackups.testudo.softcdata.com/v1/velero/backups/:backupName/includes,应用备份,/apis/appbackups.testudo.softcdata.com/v1/velero/backups/:backupName/includes,1c30a700d3001001,查询Velero备份包含项(includedNamespaces/includedResources),容灾云平台 / V1 / 应用备份
+GET /apis/appbackups.testudo.softcdata.com/v1/watch/appbackups,应用备份,/apis/appbackups.testudo.softcdata.com/v1/watch/appbackups,2a418fe378c0a9,事件流(全部) ,容灾云平台 / V1 / 应用备份
+GET /apis/appbackups.testudo.softcdata.com/v1/watch/appbackups/:name,应用备份,/apis/appbackups.testudo.softcdata.com/v1/watch/appbackups/:name,2aab0af7b0c0a6,事件流(单个),容灾云平台 / V1 / 应用备份
+GET /apis/apprestores.testudo.softcdata.com/v1/apprestores,应用恢复,/apis/apprestores.testudo.softcdata.com/v1/apprestores,34a0ae4978c001,列表查询,容灾云平台 / V1 / 应用恢复
+POST /apis/apprestores.testudo.softcdata.com/v1/apprestores,应用恢复,/apis/apprestores.testudo.softcdata.com/v1/apprestores,3ee6850478c056,创建应用恢复,容灾云平台 / V1 / 应用恢复
+DELETE /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name,应用恢复,/apis/apprestores.testudo.softcdata.com/v1/apprestores/:name,34a0ae4b38c008,删除,容灾云平台 / V1 / 应用恢复
+GET /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name,应用恢复,/apis/apprestores.testudo.softcdata.com/v1/apprestores/:name,34a0ae49b8c002,获取详情,容灾云平台 / V1 / 应用恢复
+PUT /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name,应用恢复,/apis/apprestores.testudo.softcdata.com/v1/apprestores/:name,3ee68504b8c058,更新应用恢复,容灾云平台 / V1 / 应用恢复
+POST /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name/actions/:type,应用恢复,/apis/apprestores.testudo.softcdata.com/v1/apprestores/:name/actions/:type,3c211cc3f8c006 | 3c211cc3f8c008,触发取消 | 触发重试,容灾云平台 / V1 / 应用恢复 / 应用恢复动作
+POST /apis/apprestores.testudo.softcdata.com/v1/apprestores/preflight/validate,应用恢复,/apis/apprestores.testudo.softcdata.com/v1/apprestores/preflight/validate,1c385ce4c7801001,恢复前置校验，并加载BLS,容灾云平台 / V1 / 应用恢复
+GET /apis/apprestores.testudo.softcdata.com/v1/watch/apprestores,应用恢复,/apis/apprestores.testudo.softcdata.com/v1/watch/apprestores,34a10209f8c00c,事件流(全部) ,容灾云平台 / V1 / 应用恢复
+GET /apis/apprestores.testudo.softcdata.com/v1/watch/apprestores/:name,应用恢复,/apis/apprestores.testudo.softcdata.com/v1/watch/apprestores/:name,34a12bb3b8c041,事件流(单个) ,容灾云平台 / V1 / 应用恢复
+GET /healthz,根接口,/healthz,25559f1e78c062,健康检查,容灾云平台 / V1 / 健康检查与鉴权
+POST /login,根接口,/login,25559f1e78c064,登录获取令牌,容灾云平台 / V1 / 健康检查与鉴权
+GET /readyz,根接口,/readyz,25559f1e78c063,就绪检查,容灾云平台 / V1 / 健康检查与鉴权
+POST /refresh_token,根接口,/refresh_token,1bf8e6af53c01001,刷新令牌 (Refresh Token),容灾云平台 / V1 / 健康检查与鉴权
+GET /api/v1/users,用户管理,/api/v1/users,1c4ce9c769001001,用户列表,容灾云平台 / V1 / 用户管理
+POST /api/v1/users,用户管理,/api/v1/users,1c4cd93b5fc01001,新增用户,容灾云平台 / V1 / 用户管理
+DELETE /api/v1/users/:username,用户管理,/api/v1/users/:username,1c4ce9c787001001,删除用户,容灾云平台 / V1 / 用户管理
+PATCH /api/v1/users/:username/password,用户管理,/api/v1/users/:username/password,1c4ce9c7a7401001,修改用户密码,容灾云平台 / V1 / 用户管理
+PATCH /api/v1/users/:username/status,用户管理,/api/v1/users/:username/status,1c4cd93b7b001001,更新用户状态（启用/禁用）,容灾云平台 / V1 / 用户管理
+GET /api/v1/system-settings,系统设置,/api/v1/system-settings,1c31b7bf28801000,列表查询,容灾云平台 / V1 / 系统设置（配置管理）
+POST /api/v1/system-settings,系统设置,/api/v1/system-settings,1c31b7bf87401001,创建配置项,容灾云平台 / V1 / 系统设置（配置管理）
+DELETE /api/v1/system-settings/:config_key,系统设置,/api/v1/system-settings/:config_key,1c31b7ca57001001,删除配置项,容灾云平台 / V1 / 系统设置（配置管理）
+PUT /api/v1/system-settings/:config_key,系统设置,/api/v1/system-settings/:config_key,1c31b7bfa1c01001,更新配置项,容灾云平台 / V1 / 系统设置（配置管理）
+GET /api/v1/system-settings/assets/:config_key,系统设置,/api/v1/system-settings/assets/:config_key,1c31b7ca8b001000,获取资产,容灾云平台 / V1 / 系统设置（配置管理）
+POST /api/v1/system-settings/assets/:config_key,系统设置,/api/v1/system-settings/assets/:config_key,1c31b7ca73001000,上传资产,容灾云平台 / V1 / 系统设置（配置管理）
+GET /api/v1/system-settings/public,系统设置,/api/v1/system-settings/public,1c31b7bf6e801000,public按keys读取,容灾云平台 / V1 / 系统设置（配置管理）
+GET /apis/backuprestorestatistics.testudo.softcdata.com/v1/autobackups/execution-summary,统计,/apis/backuprestorestatistics.testudo.softcdata.com/v1/autobackups/execution-summary,1c7215aa3e401001,获取自动备份执行统计,容灾云平台 / V1 / 应用备份恢复统计
+GET /apis/backuprestorestatistics.testudo.softcdata.com/v1/backups,统计,/apis/backuprestorestatistics.testudo.softcdata.com/v1/backups,1a7322a38c001,获取备份统计,容灾云平台 / V1 / 应用备份恢复统计
+GET /apis/backuprestorestatistics.testudo.softcdata.com/v1/backups/success-rate,统计,/apis/backuprestorestatistics.testudo.softcdata.com/v1/backups/success-rate,1c239ca7d4801000,获取备份成功率统计,容灾云平台 / V1 / 应用备份恢复统计
+GET /apis/backuprestorestatistics.testudo.softcdata.com/v1/instances,统计,/apis/backuprestorestatistics.testudo.softcdata.com/v1/instances,1c239ac3a6001000,获取容灾实例统计 (概览),容灾云平台 / V1 / 应用备份恢复统计
+GET /apis/backuprestorestatistics.testudo.softcdata.com/v1/operations,统计,/apis/backuprestorestatistics.testudo.softcdata.com/v1/operations,1c1fe2a799801001,获取容灾操作统计,容灾云平台 / V1 / 应用备份恢复统计
+GET /apis/backuprestorestatistics.testudo.softcdata.com/v1/operations/by-time,统计,/apis/backuprestorestatistics.testudo.softcdata.com/v1/operations/by-time,1c2398ad1d001000,获取容灾操作统计 (按时间),容灾云平台 / V1 / 应用备份恢复统计
+GET /apis/backuprestorestatistics.testudo.softcdata.com/v1/restores,统计,/apis/backuprestorestatistics.testudo.softcdata.com/v1/restores,1a7322a38c003,获取恢复统计,容灾云平台 / V1 / 应用备份恢复统计
+GET /apis/backuprestorestatistics.testudo.softcdata.com/v1/storage,统计,/apis/backuprestorestatistics.testudo.softcdata.com/v1/storage,1c2620b6d7801001,获取存储用量统计,容灾云平台 / V1 / 应用备份恢复统计
+GET /apis/backuprestorestatistics.testudo.softcdata.com/v1/tasks/progress,统计,/apis/backuprestorestatistics.testudo.softcdata.com/v1/tasks/progress,1c71f52b8b401001,获取备份恢复任务进度趋势,容灾云平台 / V1 / 应用备份恢复统计
+GET /apis/cluster.testudo.softcdata.com/v1/clusters,集群管理,/apis/cluster.testudo.softcdata.com/v1/clusters,25559f1f78c067,列表查询,容灾云平台 / V1 / 集群配置管理
+POST /apis/cluster.testudo.softcdata.com/v1/clusters,集群管理,/apis/cluster.testudo.softcdata.com/v1/clusters,3ee6850538c060 | 69ee1a0f8c0b7,添加集群(kubeconfig添加) | 添加集群(token添加),容灾云平台 / V1 / 集群配置管理
+DELETE /apis/cluster.testudo.softcdata.com/v1/clusters/:name,集群管理,/apis/cluster.testudo.softcdata.com/v1/clusters/:name,25559f2038c06f,删除,容灾云平台 / V1 / 集群配置管理
+GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name,集群管理,/apis/cluster.testudo.softcdata.com/v1/clusters/:name,25559f1fb8c069 | 1be22307d0001001,获取详情 | 获取集群名称列表,容灾云平台 / V1 / 集群配置管理
+PATCH /apis/cluster.testudo.softcdata.com/v1/clusters/:name,集群管理,/apis/cluster.testudo.softcdata.com/v1/clusters/:name,1bd502f9fe001000,更新集群,容灾云平台 / V1 / 集群配置管理
+POST /apis/cluster.testudo.softcdata.com/v1/clusters/:name/actions/refresh-namespaces,集群管理,/apis/cluster.testudo.softcdata.com/v1/clusters/:name/actions/refresh-namespaces,1c613a8d76001001,刷新命名空间统计,容灾云平台 / V1 / 集群配置管理
+GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name/protected-namespaces,集群管理,/apis/cluster.testudo.softcdata.com/v1/clusters/:name/protected-namespaces,1c61734794401001,查询指定集群下已受保护命名空间,容灾云平台 / V1 / 集群配置管理
+GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name/restore-classes,集群管理,/apis/cluster.testudo.softcdata.com/v1/clusters/:name/restore-classes,1c4bb4e50d001001,获取恢复Class列表,容灾云平台 / V1 / 集群配置管理
+GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name/validate,集群管理,/apis/cluster.testudo.softcdata.com/v1/clusters/:name/validate,25559f2038c072,校验,容灾云平台 / V1 / 集群配置管理
+POST /apis/cluster.testudo.softcdata.com/v1/clusters/kubeconfig/validate,集群管理,/apis/cluster.testudo.softcdata.com/v1/clusters/kubeconfig/validate,67d3bab78c00b | 69dbb8ef8c07f,验证连接(kubeconfig) | 验证连接(token),容灾云平台 / V1 / 集群配置管理
+GET /apis/cluster.testudo.softcdata.com/v1/clusters/names,集群管理,/apis/cluster.testudo.softcdata.com/v1/clusters/names,1be22307d0001001,获取集群名称列表,容灾云平台 / V1 / 集群配置管理
+GET /apis/cluster.testudo.softcdata.com/v1/watch/clusters,集群管理,/apis/cluster.testudo.softcdata.com/v1/watch/clusters,2667344638c320,事件流(全部),容灾云平台 / V1 / 集群配置管理
+GET /apis/cluster.testudo.softcdata.com/v1/watch/clusters/:name,集群管理,/apis/cluster.testudo.softcdata.com/v1/watch/clusters/:name,2667d19538c36d,事件流(单个),容灾云平台 / V1 / 集群配置管理

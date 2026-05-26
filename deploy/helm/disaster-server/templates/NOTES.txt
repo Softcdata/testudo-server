@@ -1,0 +1,9 @@
+1. Get the application URL by running these commands:
+
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+        Watch the status with: kubectl get svc -w -n {{ .Release.Namespace }}
+
+  export SVC={{ include "disaster-server.fullname" . }}
+  export NS={{ .Release.Namespace }}
+  kubectl port-forward svc/$SVC 8080:8080 -n $NS
+  echo "Open http://127.0.0.1:8080"

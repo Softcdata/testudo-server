@@ -1,0 +1,782 @@
+[
+  {
+    "method": "POST",
+    "path": "/api/v1/deletion/check",
+    "handler": "h.check"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system-settings",
+    "handler": "h.listSettings"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/system-settings",
+    "handler": "h.createSetting"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/system-settings/:config_key",
+    "handler": "h.deleteSetting"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/system-settings/:config_key",
+    "handler": "h.updateSetting"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system-settings/assets/:config_key",
+    "handler": "h.getAsset"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/system-settings/assets/:config_key",
+    "handler": "h.uploadAsset"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system-settings/public",
+    "handler": "h.listPublicSettings"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/users",
+    "handler": "h.listUsers"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/users",
+    "handler": "h.createUser"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/users/:username",
+    "handler": "h.deleteUser"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/users/:username/password",
+    "handler": "h.patchUserPassword"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/users/:username/status",
+    "handler": "h.patchUserStatus"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/appbackups",
+    "handler": "c.appBackups"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/appbackups",
+    "handler": "c.createAppBackup"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name",
+    "handler": "c.deleteAppBackup"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name",
+    "handler": "c.appBackup"
+  },
+  {
+    "method": "PUT",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name",
+    "handler": "c.updateAppBackup"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/actions/:type",
+    "handler": "c.executeAction"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download",
+    "handler": "c.downloadBackup"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/history",
+    "handler": "c.getBackupHistory"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/appbackups/clusters",
+    "handler": "c.getAppBackupClusters"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/velero/backups/:backupName/includes",
+    "handler": "c.getVeleroBackupIncludes"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/watch/appbackups",
+    "handler": "c.watchAppBackups"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/appbackups.testudo.softcdata.com/v1/watch/appbackups/:name",
+    "handler": "c.watchAppBackup"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/apprestores.testudo.softcdata.com/v1/apprestores",
+    "handler": "c.appRestores"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/apprestores.testudo.softcdata.com/v1/apprestores",
+    "handler": "c.createAppRestore"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/apprestores.testudo.softcdata.com/v1/apprestores/:name",
+    "handler": "c.deleteAppRestore"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/apprestores.testudo.softcdata.com/v1/apprestores/:name",
+    "handler": "c.appRestore"
+  },
+  {
+    "method": "PUT",
+    "path": "/apis/apprestores.testudo.softcdata.com/v1/apprestores/:name",
+    "handler": "c.updateAppRestore"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/apprestores.testudo.softcdata.com/v1/apprestores/:name/actions/:type",
+    "handler": "c.executeAction"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/apprestores.testudo.softcdata.com/v1/apprestores/preflight/validate",
+    "handler": "c.validateRestorePreflight"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/apprestores.testudo.softcdata.com/v1/watch/apprestores",
+    "handler": "c.watchAppRestores"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/apprestores.testudo.softcdata.com/v1/watch/apprestores/:name",
+    "handler": "c.watchAppRestore"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/backuprestorestatistics.testudo.softcdata.com/v1/autobackups/execution-summary",
+    "handler": "h.GetAutoBackupExecutionSummary"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/backuprestorestatistics.testudo.softcdata.com/v1/backups",
+    "handler": "h.GetBackupStatistics"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/backuprestorestatistics.testudo.softcdata.com/v1/backups/success-rate",
+    "handler": "h.GetBackupSuccessRate"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/backuprestorestatistics.testudo.softcdata.com/v1/instances",
+    "handler": "h.GetInstanceStatistics"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/backuprestorestatistics.testudo.softcdata.com/v1/operations",
+    "handler": "h.GetOperationStatistics"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/backuprestorestatistics.testudo.softcdata.com/v1/operations/by-time",
+    "handler": "h.GetOperationStatisticsByTime"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/backuprestorestatistics.testudo.softcdata.com/v1/restores",
+    "handler": "h.GetRestoreStatistics"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/backuprestorestatistics.testudo.softcdata.com/v1/storage",
+    "handler": "h.GetStorageStatistics"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/backuprestorestatistics.testudo.softcdata.com/v1/tasks/progress",
+    "handler": "h.GetTaskProgressTrend"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/clusters",
+    "handler": "c.clusters"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/clusters",
+    "handler": "c.createCluster"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/clusters/:name",
+    "handler": "c.deleteCluster"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/clusters/:name",
+    "handler": "c.cluster"
+  },
+  {
+    "method": "PATCH",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/clusters/:name",
+    "handler": "c.patchCluster"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/clusters/:name/actions/refresh-namespaces",
+    "handler": "c.refreshNamespaces"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/clusters/:name/protected-namespaces",
+    "handler": "c.protectedNamespaces"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/clusters/:name/restore-classes",
+    "handler": "c.listRestoreClasses"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/clusters/:name/validate",
+    "handler": "c.validateCluster"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/clusters/kubeconfig/validate",
+    "handler": "c.validateKubeConfig"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/clusters/names",
+    "handler": "c.clusterNames"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/watch/clusters",
+    "handler": "c.watchClusters"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/cluster.testudo.softcdata.com/v1/watch/clusters/:name",
+    "handler": "c.watchCluster"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterbackups.testudo.softcdata.com/v1/backups",
+    "handler": "c.backups"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disasterbackups.testudo.softcdata.com/v1/backups",
+    "handler": "c.createBackup"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/disasterbackups.testudo.softcdata.com/v1/backups/:name",
+    "handler": "c.deleteBackup"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterbackups.testudo.softcdata.com/v1/backups/:name",
+    "handler": "c.backup"
+  },
+  {
+    "method": "PUT",
+    "path": "/apis/disasterbackups.testudo.softcdata.com/v1/backups/:name",
+    "handler": "c.updateBackup"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterbackups.testudo.softcdata.com/v1/watch/backups",
+    "handler": "c.watchBackups"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterbackups.testudo.softcdata.com/v1/watch/backups/:name",
+    "handler": "c.watchBackup"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterconfigs.testudo.softcdata.com/v1/configs",
+    "handler": "c.configs"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disasterconfigs.testudo.softcdata.com/v1/configs",
+    "handler": "c.createConfig"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/disasterconfigs.testudo.softcdata.com/v1/configs/:name",
+    "handler": "c.deleteConfig"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterconfigs.testudo.softcdata.com/v1/configs/:name",
+    "handler": "c.config"
+  },
+  {
+    "method": "PUT",
+    "path": "/apis/disasterconfigs.testudo.softcdata.com/v1/configs/:name",
+    "handler": "c.updateConfig"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterconfigs.testudo.softcdata.com/v1/configs/names",
+    "handler": "c.configNames"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterconfigs.testudo.softcdata.com/v1/watch/configs",
+    "handler": "c.watchConfigs"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterconfigs.testudo.softcdata.com/v1/watch/configs/:name",
+    "handler": "c.watchConfig"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterdrills.testudo.softcdata.com/v1/drills",
+    "handler": "h.listDrills"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disasterdrills.testudo.softcdata.com/v1/drills",
+    "handler": "h.createDrill"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/disasterdrills.testudo.softcdata.com/v1/drills/:name",
+    "handler": "h.deleteDrill"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterdrills.testudo.softcdata.com/v1/drills/:name",
+    "handler": "h.getDrill"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disasterdrills.testudo.softcdata.com/v1/drills/:name/cleanup",
+    "handler": "h.cleanupDrill"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disasterdrills.testudo.softcdata.com/v1/drills/:name/confirm",
+    "handler": "h.confirmDrill"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disasterdrills.testudo.softcdata.com/v1/drills/:name/restart",
+    "handler": "h.restartDrill"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterdrills.testudo.softcdata.com/v1/drills/actions/protected-namespaces",
+    "handler": "h.getProtectedNamespaces"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterdrills.testudo.softcdata.com/v1/watch/drills",
+    "handler": "h.watchDrills"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterdrills.testudo.softcdata.com/v1/watch/drills/:name",
+    "handler": "h.watchDrill"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/groups",
+    "handler": "h.listGroups"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/groups",
+    "handler": "h.createGroup"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/groups/:name",
+    "handler": "h.deleteGroup"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/groups/:name",
+    "handler": "h.getGroup"
+  },
+  {
+    "method": "PATCH",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/groups/:name",
+    "handler": "h.updateGroup"
+  },
+  {
+    "method": "PUT",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/groups/:name",
+    "handler": "h.updateGroup"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/groups/:name/actions",
+    "handler": "h.executeAction"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/groups/:name/history",
+    "handler": "h.getHistory"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/groups/:name/instances",
+    "handler": "h.listGroupInstances"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/groups/:name/operations/:operationName",
+    "handler": "h.getOperationDetail"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/groups/instance-picker",
+    "handler": "h.instancePicker"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/operations",
+    "handler": "h.watchGroupOperations"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/operations/:operationName",
+    "handler": "h.watchGroupOperation"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/status",
+    "handler": "h.watchGroupStatuses"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/status/:name",
+    "handler": "h.watchGroupStatus"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances",
+    "handler": "h.listInstances"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances",
+    "handler": "h.createInstance"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name",
+    "handler": "h.deleteInstance"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name",
+    "handler": "h.getInstance"
+  },
+  {
+    "method": "PUT",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name",
+    "handler": "h.updateInstance"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/actions",
+    "handler": "h.executeAction"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/groups",
+    "handler": "h.getInstanceGroups"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/history",
+    "handler": "h.getHistory"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/operations/:operationName",
+    "handler": "h.getOperationDetail"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/restore-classes/validate",
+    "handler": "h.validateRestoreClasses"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/sync-status",
+    "handler": "h.getSyncStatus"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/validate-target",
+    "handler": "h.validateTarget"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/watch/instances",
+    "handler": "h.watchInstances"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/watch/instances/:name",
+    "handler": "h.watchInstance"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterinstances.testudo.softcdata.com/v1/watch/instances/operations/:operationName",
+    "handler": "h.watchOperation"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterjobs.testudo.softcdata.com/v1/jobs",
+    "handler": "c.configs"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/disasterjobs.testudo.softcdata.com/v1/jobs",
+    "handler": "c.createConfig"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/disasterjobs.testudo.softcdata.com/v1/jobs/:name",
+    "handler": "c.deleteConfig"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterjobs.testudo.softcdata.com/v1/jobs/:name",
+    "handler": "c.config"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterjobs.testudo.softcdata.com/v1/watch/jobs",
+    "handler": "c.watchJobs"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/disasterjobs.testudo.softcdata.com/v1/watch/jobs/:name",
+    "handler": "c.watchJob"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/policies.testudo.softcdata.com/v1/policies",
+    "handler": "h.policies"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/policies.testudo.softcdata.com/v1/policies",
+    "handler": "h.createPolicy"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/policies.testudo.softcdata.com/v1/policies/:name",
+    "handler": "h.deletePolicy"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/policies.testudo.softcdata.com/v1/policies/:name",
+    "handler": "h.policy"
+  },
+  {
+    "method": "PUT",
+    "path": "/apis/policies.testudo.softcdata.com/v1/policies/:name",
+    "handler": "h.updatePolicy"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/policies.testudo.softcdata.com/v1/policies/names",
+    "handler": "h.policyNames"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/resources.testudo.softcdata.com/v1/:resource",
+    "handler": "k.getResources"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/storage.testudo.softcdata.com/v1/storages",
+    "handler": "c.storages"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/storage.testudo.softcdata.com/v1/storages",
+    "handler": "c.createStorage"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/storage.testudo.softcdata.com/v1/storages/:name",
+    "handler": "c.deleteStorage"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/storage.testudo.softcdata.com/v1/storages/:name",
+    "handler": "c.storage"
+  },
+  {
+    "method": "PATCH",
+    "path": "/apis/storage.testudo.softcdata.com/v1/storages/:name",
+    "handler": "c.patchStorage"
+  },
+  {
+    "method": "PUT",
+    "path": "/apis/storage.testudo.softcdata.com/v1/storages/:name",
+    "handler": "c.updateStorage"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/storage.testudo.softcdata.com/v1/storages/:name/validate",
+    "handler": "c.validateStorage"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/storage.testudo.softcdata.com/v1/storages/connectivity/validate",
+    "handler": "c.validateBSLConnectivity"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/storage.testudo.softcdata.com/v1/storages/names",
+    "handler": "c.storageNames"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/storage.testudo.softcdata.com/v1/storages/validate/connection",
+    "handler": "c.validateS3Connection"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/storage.testudo.softcdata.com/v1/watch/storages",
+    "handler": "c.watchStorages"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/v1/:resource/:name/history",
+    "handler": "h.listResourceEvents"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/v1/deletion/check",
+    "handler": "h.check"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/v1/events",
+    "handler": "h.listEvents"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/v1/system-settings",
+    "handler": "h.listSettings"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/v1/system-settings",
+    "handler": "h.createSetting"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/v1/system-settings/:config_key",
+    "handler": "h.deleteSetting"
+  },
+  {
+    "method": "PUT",
+    "path": "/apis/v1/system-settings/:config_key",
+    "handler": "h.updateSetting"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/v1/system-settings/assets/:config_key",
+    "handler": "h.getAsset"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/v1/system-settings/assets/:config_key",
+    "handler": "h.uploadAsset"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/v1/system-settings/public",
+    "handler": "h.listPublicSettings"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/v1/users",
+    "handler": "h.listUsers"
+  },
+  {
+    "method": "POST",
+    "path": "/apis/v1/users",
+    "handler": "h.createUser"
+  },
+  {
+    "method": "DELETE",
+    "path": "/apis/v1/users/:username",
+    "handler": "h.deleteUser"
+  },
+  {
+    "method": "PATCH",
+    "path": "/apis/v1/users/:username/password",
+    "handler": "h.patchUserPassword"
+  },
+  {
+    "method": "PATCH",
+    "path": "/apis/v1/users/:username/status",
+    "handler": "h.patchUserStatus"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/v1/watch/:resource/:name/events",
+    "handler": "h.watchResourceEvents"
+  },
+  {
+    "method": "GET",
+    "path": "/apis/v1/watch/events",
+    "handler": "h.watchEvents"
+  },
+  {
+    "method": "GET",
+    "path": "/healthz",
+    "handler": "func(ctx context.Context, c *app.RequestContext"
+  },
+  {
+    "method": "POST",
+    "path": "/login",
+    "handler": "jwtMiddleware.LoginHandler"
+  },
+  {
+    "method": "GET",
+    "path": "/readyz",
+    "handler": "func(ctx context.Context, c *app.RequestContext"
+  },
+  {
+    "method": "POST",
+    "path": "/refresh_token",
+    "handler": "middleware.RefreshTokenHandler"
+  }
+]

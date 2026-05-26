@@ -1,0 +1,5 @@
+- [x] Modify `internal/middleware/jwt.go`: Update `LoginResponse` to return `accessToken` instead of `token`.
+- [x] Modify `internal/middleware/jwt.go`: Ensure `RefreshResponse` is configured to return `accessToken`.
+- [x] Verify `internal/router/router.go`: Ensure `/refresh_token` route is registered and uses `jwtMiddleware.RefreshHandler`.
+- [x] Update API documentation / OpenSpec to reflect the changes.
+- [ ] Verify functionality with `curl` or Postman.

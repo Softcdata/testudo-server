@@ -1,0 +1,11 @@
+## 1. Implementation
+- [x] 1.1 创建 `internal/pkg/query` 包结构
+- [x] 1.2 在 `types.go` 中实现 `BaseQuery` 和 `CollectionResponse` 类型
+- [x] 1.3 实现 `ParseOptions` 辅助函数，解析通用查询参数 (Page, Limit, Sort, Filters)
+- [x] 1.4 实现 `BuildCollectionResponse` 辅助函数以生成分页链接和 HATEOAS Links
+- [x] 1.5 为分页链接生成逻辑编写单元测试
+- [x] 1.6 重构 `DisasterCluster` 列表 API 以使用新的查询包
+- [x] 1.7 (已变更) 放弃 K8s API `continue` 分页，改为基于 Informer 的内存分页以支持 Total 计数
+- [x] 1.8 在 `disaster-server` 中集成 SharedInformerFactory
+- [x] 1.9 将 Informer/Lister 注入到 API Handlers
+- [x] 1.10 重构 `DisasterCluster` List 接口使用 Lister 实现内存分页 (支持 Total/Prev/Last/Sort/Filter)

@@ -1,0 +1,55 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: disaster-server-role
+rules:
+- apiGroups:
+  - testudo.softcdata.com
+  resources:
+  - disasterconfigs
+  - clusters
+  - storagerepositories
+  - appbackups
+  - apprestores
+  - disasterpolicies
+  - disasterjobs
+  - disasterbackups
+  - backuppolicies
+  - backuprestorestatisticses
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - create
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: disaster-server-rb
+subjects:
+- kind: ServiceAccount
+  name: disaster-server-sa
+  namespace: disaster-system
+roleRef:
+  kind: ClusterRole
+  name: disaster-server-role
+  apiGroup: rbac.authorization.k8s.io

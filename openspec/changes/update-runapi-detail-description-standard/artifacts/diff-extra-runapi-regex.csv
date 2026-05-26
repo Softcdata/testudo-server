@@ -1,0 +1,2 @@
+key,target_id,folder_path,name,target_type,method,path,url
+POST /disasterjobs.testudo.softcdata.com/v1/jobs,3ee6850678c074,容灾云平台 / V1 / 任务,创建容灾任务,api,POST,/disasterjobs.testudo.softcdata.com/v1/jobs,{{baseUrl}}/disasterjobs.testudo.softcdata.com/v1/jobs

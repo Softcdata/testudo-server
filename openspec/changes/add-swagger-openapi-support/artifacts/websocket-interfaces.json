@@ -1,0 +1,146 @@
+[
+  {
+    "method": "GET",
+    "full_path": "/apis/v1/watch/:resource/:name/events",
+    "handler": "h.watchResourceEvents",
+    "module_name": "事件与历史"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/v1/watch/events",
+    "handler": "h.watchEvents",
+    "module_name": "事件与历史"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/storage.testudo.softcdata.com/v1/watch/storages",
+    "handler": "c.watchStorages",
+    "module_name": "存储仓库"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disasterjobs.testudo.softcdata.com/v1/watch/jobs",
+    "handler": "c.watchJobs",
+    "module_name": "容灾任务"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disasterjobs.testudo.softcdata.com/v1/watch/jobs/:name",
+    "handler": "c.watchJob",
+    "module_name": "容灾任务"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disasterbackups.testudo.softcdata.com/v1/watch/backups",
+    "handler": "c.watchBackups",
+    "module_name": "容灾备份"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disasterbackups.testudo.softcdata.com/v1/watch/backups/:name",
+    "handler": "c.watchBackup",
+    "module_name": "容灾备份"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disasterinstances.testudo.softcdata.com/v1/watch/instances",
+    "handler": "h.watchInstances",
+    "module_name": "容灾实例"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disasterinstances.testudo.softcdata.com/v1/watch/instances/:name",
+    "handler": "h.watchInstance",
+    "module_name": "容灾实例"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disasterinstances.testudo.softcdata.com/v1/watch/instances/operations/:operationName",
+    "handler": "h.watchOperation",
+    "module_name": "容灾实例"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disasterdrills.testudo.softcdata.com/v1/watch/drills",
+    "handler": "h.watchDrills",
+    "module_name": "容灾演练"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disasterdrills.testudo.softcdata.com/v1/watch/drills/:name",
+    "handler": "h.watchDrill",
+    "module_name": "容灾演练"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/operations",
+    "handler": "h.watchGroupOperations",
+    "module_name": "容灾组"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/operations/:operationName",
+    "handler": "h.watchGroupOperation",
+    "module_name": "容灾组"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/status",
+    "handler": "h.watchGroupStatuses",
+    "module_name": "容灾组"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disastergroups.testudo.softcdata.com/v1/watch/groups/status/:name",
+    "handler": "h.watchGroupStatus",
+    "module_name": "容灾组"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disasterconfigs.testudo.softcdata.com/v1/watch/configs",
+    "handler": "c.watchConfigs",
+    "module_name": "容灾配置"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/disasterconfigs.testudo.softcdata.com/v1/watch/configs/:name",
+    "handler": "c.watchConfig",
+    "module_name": "容灾配置"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/appbackups.testudo.softcdata.com/v1/watch/appbackups",
+    "handler": "c.watchAppBackups",
+    "module_name": "应用备份"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/appbackups.testudo.softcdata.com/v1/watch/appbackups/:name",
+    "handler": "c.watchAppBackup",
+    "module_name": "应用备份"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/apprestores.testudo.softcdata.com/v1/watch/apprestores",
+    "handler": "c.watchAppRestores",
+    "module_name": "应用恢复"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/apprestores.testudo.softcdata.com/v1/watch/apprestores/:name",
+    "handler": "c.watchAppRestore",
+    "module_name": "应用恢复"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/cluster.testudo.softcdata.com/v1/watch/clusters",
+    "handler": "c.watchClusters",
+    "module_name": "集群管理"
+  },
+  {
+    "method": "GET",
+    "full_path": "/apis/cluster.testudo.softcdata.com/v1/watch/clusters/:name",
+    "handler": "c.watchCluster",
+    "module_name": "集群管理"
+  }
+]
