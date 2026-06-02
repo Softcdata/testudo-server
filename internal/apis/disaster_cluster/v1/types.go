@@ -38,6 +38,7 @@ type ImageSourceDTO struct {
 
 type VeleroInstallDTO struct {
 	ImageRegistry        string `json:"imageRegistry,omitempty"`
+	Username             string `json:"username,omitempty"`
 	CredentialConfigured bool   `json:"credentialConfigured"`
 }
 

@@ -1,7 +1,7 @@
 # Design: Disaster Cluster Velero Install API
 
 ## 背景
-server 需要成为“添加集群时配置 Velero 安装镜像源和拉取凭据”的唯一写入口，同时避免把任何敏感值直接暴露给 `Cluster` DTO 或查询接口。
+server 需要成为“添加集群时配置 Velero 安装镜像源和拉取凭据”的唯一写入口，同时避免把密码与 dockerconfigjson 这类敏感值直接暴露给 `Cluster` DTO 与查询接口。
 
 当前 `imageSources` 已经服务于实例镜像改写场景，因此新的 API 契约必须独立建模为 `veleroInstall`，而不是向 `imageSources[]` 继续塞凭据字段。
 
@@ -15,6 +15,7 @@ server 需要成为“添加集群时配置 Velero 安装镜像源和拉取凭�
   - `veleroInstall.removeCredential`（显式删除标记）
 - detail/list 只回显：
   - `veleroInstall.imageRegistry`
+  - `veleroInstall.username`（从管理平面 Secret 解析得到，解析失败时省略）
   - `veleroInstall.credentialConfigured`
 
 ### D2. 一个 Cluster 对应一个管理平面 dockerconfigjson Secret
@@ -23,9 +24,11 @@ server 需要成为“添加集群时配置 Velero 安装镜像源和拉取凭�
 - 命名：稳定生成，例如 `cluster-velero-regcred-<cluster-name>`
 - 原因：与 operator 侧“一次注入一个 target pull secret”模型对齐。
 
-### D3. 未携带凭据不代表清空
-- 为避免编辑时误删，只有显式的删除标记或空操作语义才会移除已有凭据。
-- 常规 update 若未带 credential 字段，保持已有 Secret 内容不变。
+### D3. 未携带字段不代表清空
+- 为避免编辑时误删，常规 update 未携带 `veleroInstall.imageRegistry` 时保持已有镜像源配置不变。
+- 常规 update 未携带 `veleroInstall.username/password` 时保持已有 Secret 内容不变。
+- PATCH 显式提交 `veleroInstall.imageRegistry=""` 时清空整段 `Cluster.spec.veleroInstall`，并删除 server 管理的 registry Secret。
+- PATCH 显式提交 `veleroInstall.username=""` 时只清空 registry 凭据引用，并保留 `veleroInstall.imageRegistry`。
 
 ### D4. operator 关心的是 Secret 引用，不是明文
 - server 在内部管理 Secret 生命周期
@@ -43,20 +46,23 @@ server 需要成为“添加集群时配置 Velero 安装镜像源和拉取凭�
 
 ## API 草案
 - `veleroInstall.imageRegistry`：read/write
-- `veleroInstall.username`：write-only
+- `veleroInstall.username`：write/read，写入非空值时生成 Secret，PATCH 写入空值时清空凭据，读取时仅回显用户名
 - `veleroInstall.password`：write-only
 - `veleroInstall.removeCredential`：write-only
 - `veleroInstall.credentialConfigured`：read-only
 
 ## Secret 生命周期
 - create：若请求携带 `veleroInstall.username/password`，则生成 cluster 级 dockerconfigjson Secret
-- update：若请求携带新凭据，则轮换 Secret 内容；若只改 `imageRegistry`，则保持 Secret 不变
-- remove：若 `removeCredential=true`，则删除 Secret 并清空引用
+- update：若请求携带新凭据，则轮换 Secret 内容；若只改 `imageRegistry` 为非空值，则保持 Secret 不变
+- clear install：PATCH 显式提交 `veleroInstall.imageRegistry=""` 时删除 server 管理的 Secret 并清空整段 `Cluster.spec.veleroInstall`
+- remove credential：若 `removeCredential=true`，则删除 Secret 并清空引用；PATCH 显式提交 `veleroInstall.username=""` 时执行同一凭据清空语义
+- read：若 `Cluster.spec.veleroInstall.registryCredentialSecretRef` 指向 server 管理的 Secret，则 server 从该 Secret 的 `.dockerconfigjson` 中解析 username 并填入 DTO；解析失败时省略 `veleroInstall.username`，不影响 `credentialConfigured`
 
 ## E2E 验收设计
-- S1 创建集群：`POST /clusters` 写入 `veleroInstall.imageRegistry + username/password`，验证管理平面 Secret 创建、`Cluster.spec.veleroInstall.registryCredentialSecretRef` 写回、查询接口脱敏回显。
+- S1 创建集群：`POST /clusters` 写入 `veleroInstall.imageRegistry + username/password`，验证管理平面 Secret 创建、`Cluster.spec.veleroInstall.registryCredentialSecretRef` 写回、查询接口回显 `username` 且不回显 `password`。
 - S2 轮换凭据：`PATCH /clusters/:name` 只提交新凭据，验证 Secret 内容更新且 Secret 名称不变。
 - S3 删除凭据：`PATCH /clusters/:name` 提交 `removeCredential=true`，验证 Secret 删除、引用清空、查询接口 `credentialConfigured=false`。
+- S4 显式传空：`PATCH /clusters/:name` 提交 `veleroInstall.username=""` 时清空凭据并保留镜像源；提交 `veleroInstall.imageRegistry=""` 时清空整段 Velero 安装配置。
 - 共享执行手册位于 `disaster-operator` change `add-cluster-registry-credential-flow/e2e-test-procedure.md`。
 
 ## 与 operator 的契约

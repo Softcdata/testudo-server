@@ -279,7 +279,85 @@ func TestCreateCluster_WithVeleroInstallCredentialsCreatesManagedSecret(t *testi
 	assert.NoError(t, err)
 	assert.Equal(t, corev1.SecretTypeDockerConfigJson, secret.Type)
 	assert.Contains(t, string(secret.Data[corev1.DockerConfigJsonKey]), "registry-user")
+	assert.Contains(t, string(ctx.Response.Body()), `"username":"registry-user"`)
 	assert.NotContains(t, string(ctx.Response.Body()), "registry-password")
+}
+
+func TestGetCluster_WithVeleroInstallReturnsUsernameFromManagedSecret(t *testing.T) {
+	clusterName := "cluster-with-velero-username"
+	clusterObj := &dapisv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: clusterName,
+		},
+		Spec: dapisv1.ClusterSpec{
+			VeleroInstall: &dapisv1.VeleroInstallSpec{
+				ImageRegistry: "harbor.customer.local/disaster",
+				RegistryCredentialSecretRef: &corev1.LocalObjectReference{
+					Name: managedVeleroRegistrySecretName(clusterName),
+				},
+			},
+		},
+	}
+	h := newMockHandler(clusterObj)
+	_, err := h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      managedVeleroRegistrySecretName(clusterName),
+			Namespace: common.DisasterSystemNamespace,
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{"auths":{"harbor.customer.local":{"username":"detail-user","password":"detail-pass","auth":"fake-auth"}}}`),
+		},
+	}, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{{Key: "name", Value: clusterName}}
+	ctx.Request.SetRequestURI("/clusters/" + clusterName)
+
+	h.cluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	assert.Contains(t, string(ctx.Response.Body()), `"username":"detail-user"`)
+	assert.NotContains(t, string(ctx.Response.Body()), "detail-pass")
+}
+
+func TestListClusters_WithVeleroInstallReturnsUsernameFromManagedSecret(t *testing.T) {
+	clusterName := "cluster-list-velero-username"
+	clusterObj := &dapisv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: clusterName,
+		},
+		Spec: dapisv1.ClusterSpec{
+			VeleroInstall: &dapisv1.VeleroInstallSpec{
+				ImageRegistry: "harbor.customer.local/disaster",
+				RegistryCredentialSecretRef: &corev1.LocalObjectReference{
+					Name: managedVeleroRegistrySecretName(clusterName),
+				},
+			},
+		},
+	}
+	h := newMockHandler(clusterObj)
+	_, err := h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      managedVeleroRegistrySecretName(clusterName),
+			Namespace: common.DisasterSystemNamespace,
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{"auths":{"harbor.customer.local":{"auth":"bGlzdC11c2VyOmxpc3QtcGFzcw=="}}}`),
+		},
+	}, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	ctx := app.NewContext(16)
+	ctx.Request.SetRequestURI("/clusters")
+
+	h.clusters(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	assert.Contains(t, string(ctx.Response.Body()), `"username":"list-user"`)
+	assert.NotContains(t, string(ctx.Response.Body()), "list-pass")
 }
 
 func TestCreateCluster_RejectsWhenLicenseLimitExceeded(t *testing.T) {
@@ -661,6 +739,8 @@ func TestPatchCluster_WithVeleroInstallCredentialRotationUpdatesManagedSecret(t 
 	secret, err := h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Get(context.Background(), managedVeleroRegistrySecretName(clusterName), metav1.GetOptions{})
 	assert.NoError(t, err)
 	assert.Contains(t, string(secret.Data[corev1.DockerConfigJsonKey]), "new-user")
+	assert.Contains(t, string(ctx.Response.Body()), `"username":"new-user"`)
+	assert.NotContains(t, string(ctx.Response.Body()), "new-pass")
 
 	updatedCluster, err := h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), clusterName, metav1.GetOptions{})
 	assert.NoError(t, err)
@@ -724,6 +804,115 @@ func TestPatchCluster_WithVeleroInstallRemoveCredentialDeletesManagedSecret(t *t
 	}
 	_, err = h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Get(context.Background(), managedVeleroRegistrySecretName(clusterName), metav1.GetOptions{})
 	assert.True(t, apierrors.IsNotFound(err))
+}
+
+func TestPatchCluster_WithEmptyVeleroInstallImageRegistryClearsConfig(t *testing.T) {
+	clusterName := "cluster-clear-velero-install"
+	clusterObj := &dapisv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: clusterName,
+		},
+		Spec: dapisv1.ClusterSpec{
+			VeleroInstall: &dapisv1.VeleroInstallSpec{
+				ImageRegistry: "harbor.customer.local/disaster",
+				RegistryCredentialSecretRef: &corev1.LocalObjectReference{
+					Name: managedVeleroRegistrySecretName(clusterName),
+				},
+			},
+		},
+	}
+	h := newMockHandler(clusterObj)
+	_, err := h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      managedVeleroRegistrySecretName(clusterName),
+			Namespace: common.DisasterSystemNamespace,
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{"auths":{"harbor.customer.local":{"username":"clear-user","password":"clear-pass","auth":"fake-auth"}}}`),
+		},
+	}, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{{Key: "name", Value: clusterName}}
+	emptyRegistry := ""
+	req := PatchDisasterClusterRequest{
+		VeleroInstall: &PatchVeleroInstallWriteDTO{
+			ImageRegistry: &emptyRegistry,
+		},
+	}
+	body, _ := json.Marshal(req)
+	ctx.Request.SetBody(body)
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.patchCluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	updatedCluster, err := h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), clusterName, metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Nil(t, updatedCluster.Spec.VeleroInstall)
+	_, err = h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Get(context.Background(), managedVeleroRegistrySecretName(clusterName), metav1.GetOptions{})
+	assert.True(t, apierrors.IsNotFound(err))
+	assert.NotContains(t, string(ctx.Response.Body()), "veleroInstall")
+	assert.NotContains(t, string(ctx.Response.Body()), "clear-pass")
+}
+
+func TestPatchCluster_WithEmptyVeleroInstallUsernameClearsCredential(t *testing.T) {
+	clusterName := "cluster-clear-velero-credential"
+	clusterObj := &dapisv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: clusterName,
+		},
+		Spec: dapisv1.ClusterSpec{
+			VeleroInstall: &dapisv1.VeleroInstallSpec{
+				ImageRegistry: "harbor.customer.local/disaster",
+				RegistryCredentialSecretRef: &corev1.LocalObjectReference{
+					Name: managedVeleroRegistrySecretName(clusterName),
+				},
+			},
+		},
+	}
+	h := newMockHandler(clusterObj)
+	_, err := h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      managedVeleroRegistrySecretName(clusterName),
+			Namespace: common.DisasterSystemNamespace,
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{"auths":{"harbor.customer.local":{"username":"clear-user","password":"clear-pass","auth":"fake-auth"}}}`),
+		},
+	}, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{{Key: "name", Value: clusterName}}
+	emptyUsername := ""
+	req := PatchDisasterClusterRequest{
+		VeleroInstall: &PatchVeleroInstallWriteDTO{
+			Username: &emptyUsername,
+		},
+	}
+	body, _ := json.Marshal(req)
+	ctx.Request.SetBody(body)
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.patchCluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	updatedCluster, err := h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), clusterName, metav1.GetOptions{})
+	assert.NoError(t, err)
+	if assert.NotNil(t, updatedCluster.Spec.VeleroInstall) {
+		assert.Equal(t, "harbor.customer.local/disaster", updatedCluster.Spec.VeleroInstall.ImageRegistry)
+		assert.Nil(t, updatedCluster.Spec.VeleroInstall.RegistryCredentialSecretRef)
+	}
+	_, err = h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Get(context.Background(), managedVeleroRegistrySecretName(clusterName), metav1.GetOptions{})
+	assert.True(t, apierrors.IsNotFound(err))
+	assert.Contains(t, string(ctx.Response.Body()), `"imageRegistry":"harbor.customer.local/disaster"`)
+	assert.Contains(t, string(ctx.Response.Body()), `"credentialConfigured":false`)
+	assert.NotContains(t, string(ctx.Response.Body()), `"username"`)
+	assert.NotContains(t, string(ctx.Response.Body()), "clear-pass")
 }
 
 func TestPatchCluster_WithDuplicateImageSourceName_ShouldFail(t *testing.T) {

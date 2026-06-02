@@ -16,7 +16,8 @@
 ### 2. cluster detail/list API 增加 Velero 安装配置的脱敏回显
 - 返回 `veleroInstall.imageRegistry` 等非敏感配置。
 - 返回 `veleroInstall.credentialConfigured` 一类脱敏状态。
-- 不回显用户名、密码或 dockerconfigjson 内容。
+- 当管理平面 Secret 中存在可解析用户名时，返回 `veleroInstall.username` 供编辑态展示。
+- 不回显 `veleroInstall.password` 与 dockerconfigjson 内容。
 
 ### 3. server 负责维护管理平面 dockerconfigjson Secret
 - 每个 `Cluster` 对应一个管理平面 `kubernetes.io/dockerconfigjson` Secret。
@@ -26,7 +27,8 @@
 ### 4. 定义修改、保持与删除语义
 - 修改镜像源前缀：覆盖 `imageRegistry`
 - 修改凭据：轮换 Secret 内容
-- 删除凭据：显式移除 Secret 并清空引用
+- 清空镜像源配置：PATCH 显式提交 `veleroInstall.imageRegistry=""`，删除 server 管理的 Secret 并清空整段 `Cluster.spec.veleroInstall`
+- 删除凭据：提交 `removeCredential=true`；PATCH 显式提交 `veleroInstall.username=""` 时执行同一删除语义，删除 server 管理的 Secret 并清空引用
 - 请求未携带凭据：保持现状，不视为清空
 
 ### 5. E2E 验收以真实 API 黑盒链路为准
@@ -34,8 +36,9 @@
 - 认证私有仓库固定使用 `registry:2 + htpasswd`，不引入 Harbor。
 - E2E 需要验证的 server 侧事实：
   - create 请求会创建 `cluster-velero-regcred-<cluster-name>`
-  - detail/list 只回显 `imageRegistry` 与 `credentialConfigured`
-  - patch 请求能区分“轮换凭据”“显式删除凭据”“未携带凭据保持不变”
+  - detail/list 回显 `imageRegistry`、`credentialConfigured` 与可解析的 `username`
+  - detail/list 不回显 `password` 与 dockerconfigjson 内容
+  - patch 请求能区分“轮换凭据”“显式清空镜像源配置”“显式删除凭据”“未携带凭据保持不变”
 
 ## Non-Goals
 - 不改变 `imageSources` 的 alias -> registry 语义。

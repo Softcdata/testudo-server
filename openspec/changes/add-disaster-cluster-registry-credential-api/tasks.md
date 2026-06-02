@@ -10,11 +10,12 @@
 - [x] 2.2 根据 write-only 凭据生成或更新 cluster 级 dockerconfigjson Secret
 - [x] 2.3 将非敏感 Secret 引用写回 `Cluster.spec.veleroInstall`
 - [x] 2.4 为 detail/list API 增加 `veleroInstall.credentialConfigured` 脱敏回显
-- [x] 2.5 补“创建 / 轮换 / 删除 / 未修改保持不变 / 仅修改 imageRegistry” handler tests
+- [x] 2.5 为 detail/list/create/patch/watch 响应补充 `veleroInstall.username` 回显，保持 `password` 不回显
+- [x] 2.6 补“创建 / 轮换 / 删除 / 显式传空清空 / 未修改保持不变 / 仅修改 imageRegistry / username 回显” handler tests
 
 ## 3. Alignment
 - [x] 3.1 与 operator 对齐 `veleroInstall` 字段命名和生命周期契约
-- [ ] 3.2 与 web 对齐编辑态“未修改”和“显式清空”两种语义
+- [x] 3.2 与 web 对齐编辑态“未修改”和“显式清空”两种语义
 
 ## 4. Verification
 - [x] 4.1 `openspec validate add-disaster-cluster-registry-credential-api --strict`

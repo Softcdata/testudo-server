@@ -1919,26 +1919,26 @@
 ## GET /apis/cluster.testudo.softcdata.com/v1/clusters
 
 - RunAPI Target ID：`25559f1f78c067`
-- RunAPI 状态：已存在，已更新详细说明，URL 已去掉固定 query 和尾部空格，鉴权类型保持继承项目鉴权，已补齐必填 `Authorization` header 并删除历史空 header，已将分页/排序/keyword/tag/label filter query 标为非必填，原说明已保留到 `## 原有说明`，已回读验证
+- RunAPI 状态：已存在，已更新详细说明，URL 已去掉固定 query 和尾部空格，鉴权类型保持继承项目鉴权，已补齐必填 `Authorization` header 并删除历史空 header，已将分页/排序/keyword/tag/label filter query 标为非必填，原说明已保留到 `## 原有说明`，已回读验证；2026-06-01 追加 `veleroInstall.username` 回显成功响应示例
 - server 路由：`internal/apis/disaster_cluster/v1/router.go`，`/apis/cluster.testudo.softcdata.com/v1/clusters`
 - server handler：`internal/apis/disaster_cluster/v1/handler.go`，`ClusterHandler.clusters`
-- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> `transport.ParseOptions` -> `tag` 映射为 `testudo.softcdata.com/cluster-tag` -> `BuildLabelSelector` 返回空 selector -> `ClusterLister.List` 读取全部 Cluster 缓存 -> 对所有 filters 执行 label 包含匹配 -> `keyword` 对 `metadata.name` 和 cluster tag 包含匹配 -> `transport.Sort` 支持 `name/creationTimestamp` -> `transport.Paginate` -> `ConvertToDisasterClusterDTO` -> `transport.BuildCollectionResponse` -> `transport.WriteSuccess(200)`
+- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> `transport.ParseOptions` -> `tag` 映射为 `testudo.softcdata.com/cluster-tag` -> `BuildLabelSelector` 返回空 selector -> `ClusterLister.List` 读取全部 Cluster 缓存 -> 对所有 filters 执行 label 包含匹配 -> `keyword` 对 `metadata.name` 和 cluster tag 包含匹配 -> `transport.Sort` 支持 `name/creationTimestamp` -> `transport.Paginate` -> `convertToDisasterClusterDTO` -> 若引用 server 管理的 Velero registry Secret 则解析 username -> `transport.BuildCollectionResponse` -> `transport.WriteSuccess(200)`
 - operator 链路：只读 cluster-scoped `Cluster` CR；`ClusterReconciler` 根据 kubeconfig/token 连接目标集群，更新 `status.status/endpoint/k8sVersion/veleroVersion/nodeCount/namespaceStats/workloadNamespaceStats/tokenExpiration` 等状态；本接口不触发 reconcile
-- 下层资源链路：接口本身不访问目标 Kubernetes 集群、Velero 或对象存储；状态和统计来自 operator 已写入的 `Cluster.status` 与 labels
+- 下层资源链路：接口本身不访问目标 Kubernetes 集群、Velero 或对象存储；状态和统计来自 operator 已写入的 `Cluster.status` 与 labels；当 Cluster 引用 server 管理的 Velero registry Secret 时，会只读管理面 `disaster-system/cluster-velero-regcred-<clusterName>` Secret 以解析 username
 - 已写入内容：五段详细说明、JWT header、分页/排序/keyword/tag/label filter 参数、DTO 脱敏字段、imageSources、veleroInstall 脱敏回显、namespace/workload 统计口径、collection envelope、当前错误分类
-- 取证备注：列表接口不返回 `spec.token`、`spec.kubeConfig`、registry username/password 或 dockerconfigjson；只返回 `has_token/has_kube_config/credentialConfigured`
+- 取证备注：列表接口不返回 `spec.token`、`spec.kubeConfig`、registry password 或 dockerconfigjson；`veleroInstall.username` 仅在管理面 dockerconfigjson Secret 可解析时回显
 - 主要错误点：JWT 失败由中间件返回 `401/403`；`ClusterLister.List` 失败时当前 handler 使用 `400 code=1000`
 
 ## POST /apis/cluster.testudo.softcdata.com/v1/clusters
 
 - RunAPI Target ID：`3ee6850538c060`（添加集群 kubeconfig 添加）与 `69ee1a0f8c0b7`（添加集群 token 添加）
-- RunAPI 状态：已存在两个同 URL/同 handler 的请求样例，已分别更新详细说明，鉴权类型保持继承项目鉴权，已补齐必填 `Authorization` 与 `Content-Type` header，已按 kubeconfig/token 两种样例修正 JSON body、schema required、字段中文说明和 `201/400/409` 响应示例，原说明已分别保留到 `## 原有说明`，已回读验证
+- RunAPI 状态：已存在两个同 URL/同 handler 的请求样例，已分别更新详细说明，鉴权类型保持继承项目鉴权，已补齐必填 `Authorization` 与 `Content-Type` header，已按 kubeconfig/token 两种样例修正 JSON body、schema required、字段中文说明和 `201/400/409` 响应示例，原说明已分别保留到 `## 原有说明`，已回读验证；2026-06-01 为 kubeconfig/token 两个样例追加 `veleroInstall.username` 回显成功响应示例
 - server 路由：`internal/apis/disaster_cluster/v1/router.go`，`POST /apis/cluster.testudo.softcdata.com/v1/clusters`
 - server handler：`internal/apis/disaster_cluster/v1/handler.go`，`ClusterHandler.createCluster`
-- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> `BindJSON(CreateDisasterClusterRequest)` -> `validateVeleroInstallWriteRequest` -> `normalizeClusterImageSources` -> `resolveCreateClusterEffectiveEndpoint` -> `ClusterLister.List(labels.Everything())` -> `findClusterEndpointConflict` -> 组装 `Cluster` CR labels/annotations/spec -> 可选创建管理面 Velero registry dockerconfigjson Secret -> 写入 trace/user annotations -> `DisasterClient.DisasterV1().Clusters().Create` -> `ConvertToDisasterClusterDTO` -> `transport.WriteSuccess(201)`
+- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> `BindJSON(CreateDisasterClusterRequest)` -> `validateVeleroInstallWriteRequest` -> `normalizeClusterImageSources` -> `resolveCreateClusterEffectiveEndpoint` -> `ClusterLister.List(labels.Everything())` -> `findClusterEndpointConflict` -> 组装 `Cluster` CR labels/annotations/spec -> 可选创建管理面 Velero registry dockerconfigjson Secret -> 写入 trace/user annotations -> `DisasterClient.DisasterV1().Clusters().Create` -> `convertToDisasterClusterDTO` -> 若刚创建了 server 管理的 Velero registry Secret 则解析 username -> `transport.WriteSuccess(201)`
 - operator 链路：`ClusterReconciler` watch 新建 `Cluster` 后添加 finalizer、发射创建开始事件、优先使用 `spec.kubeConfig` 或使用 `spec.token/spec.endpoint` 构建目标集群客户端、检查 token 过期、检查或安装 Velero、同步 registry pull secret 到目标集群、检查 Kubernetes/Velero 版本和 CRD 兼容性、统计节点/命名空间/资源数量并更新 `Cluster.status` 与统计 labels
 - 下层资源链路：server 同步写管理集群 `Cluster` CR 和可选 `disaster-system/cluster-velero-regcred-<clusterName>` Secret；operator 后续访问目标 Kubernetes 集群、Velero CRD、Velero Deployment/DaemonSet、`ServerStatusRequest`、Node、Namespace 与可保护资源；HTTP 创建请求不等待这些下层动作完成
-- 已写入内容：五段详细说明、kubeconfig 与 token 两种 RunAPI 样例差异、JWT/JSON header、`name/description/tag/kubeConfig/token/endpoint/imageSources/veleroInstall` 全字段说明、敏感字段 write-only 约束、endpoint 去重规则、Secret 创建与回滚、DTO 脱敏返回、operator 异步状态链路、当前错误分类
+- 已写入内容：五段详细说明、kubeconfig 与 token 两种 RunAPI 样例差异、JWT/JSON header、`name/description/tag/kubeConfig/token/endpoint/imageSources/veleroInstall` 全字段说明、`username` 可回显和 `password` write-only 约束、endpoint 去重规则、Secret 创建与回滚、DTO 脱敏返回、operator 异步状态链路、当前错误分类
 - 取证备注：server 当前只强制绑定 `name`，但要让 operator 后续把集群推进到 `Ready`，必须提供合法 `kubeConfig`，或者同时提供合法 `token` 和 `endpoint`；若两类凭据都不提供，HTTP 创建可以成功，operator 会标记 `NotReady/InvalidSpec`
 - 主要错误点：JWT 失败由中间件返回 `401/403`；JSON、kubeconfig、endpoint、imageSources、veleroInstall 或 Kubernetes 对象校验失败返回 `400 code=1000`；同名 Cluster 或归一化 endpoint 冲突返回 `409 code=3009`；Cluster 列表、registry Secret、Cluster CR 创建等下层失败返回 `500 code=5000`
 
@@ -1958,12 +1958,12 @@
 ## GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name
 
 - RunAPI Target ID：`25559f1fb8c069`
-- RunAPI 状态：已存在，已更新详细说明，URL 已由固定 `/clusters/cluster-ip172` 修正为 `/clusters/:name`，鉴权类型保持继承项目鉴权，已补齐必填 `Authorization` header、path `name` 参数和 `200/404/500` 响应示例，原说明已保留到 `## 原有说明`，已回读验证
+- RunAPI 状态：已存在，已更新详细说明，URL 已由固定 `/clusters/cluster-ip172` 修正为 `/clusters/:name`，鉴权类型保持继承项目鉴权，已补齐必填 `Authorization` header、path `name` 参数和 `200/404/500` 响应示例，原说明已保留到 `## 原有说明`，已回读验证；2026-06-01 追加 `veleroInstall.username` 回显成功响应示例
 - server 路由：`internal/apis/disaster_cluster/v1/router.go`，`GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name`
 - server handler：`internal/apis/disaster_cluster/v1/handler.go`，`ClusterHandler.cluster`
-- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> 读取 path `name` -> `DisasterClient.DisasterV1().Clusters().Get` -> `ConvertToDisasterClusterDTO` -> `transport.WriteSuccess(200)`
+- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> 读取 path `name` -> `DisasterClient.DisasterV1().Clusters().Get` -> `convertToDisasterClusterDTO` -> 若引用 server 管理的 Velero registry Secret 则解析 username -> `transport.WriteSuccess(200)`
 - operator 链路：本接口不触发 reconcile；返回的 `status` 与统计 labels 来自 `ClusterReconciler` 已异步维护的 `Cluster.status` 和 labels，包括目标集群连通性、Velero 版本、节点数、namespace/resource/workload 统计、token 过期时间、异常 reason/message 等
-- 下层资源链路：接口本身只读管理集群 `Cluster` CR，不访问目标 Kubernetes 集群、Velero、对象存储或业务资源；下层状态来源于 operator 已完成的目标集群访问和统计结果
+- 下层资源链路：接口本身只读管理集群 `Cluster` CR，不访问目标 Kubernetes 集群、Velero、对象存储或业务资源；当 Cluster 引用 server 管理的 Velero registry Secret 时，会只读管理面 `disaster-system/cluster-velero-regcred-<clusterName>` Secret 以解析 username；下层状态来源于 operator 已完成的目标集群访问和统计结果
 - 已写入内容：五段详细说明、JWT header、path `name`、DTO 全字段来源、敏感字段脱敏规则、`imageSources`、`veleroInstall` 脱敏回显、namespace/workload 统计口径、operator 状态字段来源、当前错误分类
 - 取证备注：清单中原先把 Target `1be22307d0001001` 也列到详情接口；回读确认该 Target 实际为 `GET /clusters/names`，本条详情接口只更新 `25559f1fb8c069`
 - 主要错误点：JWT 失败由中间件返回 `401/403`；目标 Cluster 不存在返回 `404 code=3004`；Kubernetes client 读取 Cluster 非 NotFound 错误返回 `500 code=5000`；operator 异步错误通过 `data.status.reason/message` 展示，不改变详情查询 HTTP 状态
@@ -1971,14 +1971,14 @@
 ## PATCH /apis/cluster.testudo.softcdata.com/v1/clusters/:name
 
 - RunAPI Target ID：`1bd502f9fe001000`
-- RunAPI 状态：已存在，已更新详细说明，URL 已由固定 `/clusters/master01` 修正为 `/clusters/:name`，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，已补齐必填 `Authorization` 与 `Content-Type` header、path `name`、当前支持的 JSON body 字段和 `200/400/404/500` 响应示例，原说明已保留到 `## 原有说明`，已回读验证
+- RunAPI 状态：已存在，已更新详细说明，URL 已由固定 `/clusters/master01` 修正为 `/clusters/:name`，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，已补齐必填 `Authorization` 与 `Content-Type` header、path `name`、当前支持的 JSON body 字段和 `200/400/404/500` 响应示例，原说明已保留到 `## 原有说明`，已回读验证；2026-06-01 追加 `veleroInstall.username` 回显成功响应示例，并追加 `username=""` 清空凭据、`imageRegistry=""` 清空配置两个成功响应示例
 - server 路由：`internal/apis/disaster_cluster/v1/router.go`，`PATCH /apis/cluster.testudo.softcdata.com/v1/clusters/:name`
 - server handler：`internal/apis/disaster_cluster/v1/handler.go`，`ClusterHandler.patchCluster`
-- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> 读取 path `name` -> `BindJSON(PatchDisasterClusterRequest)` -> `Clusters().Get` -> 按指针字段局部更新 `token/tag/description/imageSources/veleroInstall` -> 可选创建/更新/删除管理面 registry Secret -> 无支持字段时直接返回当前 DTO -> 有更新时写入 trace/user annotation -> `Clusters().Update` -> `ConvertToDisasterClusterDTO` -> `transport.WriteSuccess(200)`
+- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> 读取 path `name` -> `BindJSON(PatchDisasterClusterRequest)` -> `Clusters().Get` -> 按指针字段局部更新 `token/tag/description/imageSources/veleroInstall` -> `imageRegistry=""` 清空整段 Velero 安装配置 -> `username=""` 清空 registry 凭据并保留镜像源 -> 可选创建/更新/删除管理面 registry Secret -> 无支持字段时通过 `convertToDisasterClusterDTO` 直接返回当前 DTO -> 有更新时写入 trace/user annotation -> `Clusters().Update` -> `convertToDisasterClusterDTO` -> 若引用 server 管理的 Velero registry Secret 则解析 username -> `transport.WriteSuccess(200)`
 - operator 链路：本接口更新 CR 后由 `ClusterReconciler` 异步处理 generation 或 metadata 变化，发射编辑集群事件，重新构建目标集群客户端、同步 Velero registry Secret 到目标集群、必要时执行 Velero install/upgrade 检查，随后刷新状态、token 过期时间和统计字段；HTTP 响应不等待 reconcile
 - 下层资源链路：server 同步读写管理集群 `Cluster` CR 和可选 `disaster-system/cluster-velero-regcred-<clusterName>` Secret；operator 后续访问目标 Kubernetes 集群和 Velero 资源进行同步与状态刷新
-- 已写入内容：五段详细说明、JWT/JSON header、path `name`、`token/tag/description/imageSources/veleroInstall` 全字段更新语义、`endpoint/kubeConfig` 不支持 PATCH 的事实、Secret 轮换/移除规则、DTO 脱敏返回、operator 异步编辑链路、当前错误分类
-- 取证备注：`tag=""` 会删除 cluster tag label，`description=""` 会删除备注 annotation，`imageSources: []` 会清空镜像源目录；请求体没有任何支持字段时返回 200 当前 DTO，但不会执行 Update，也不会写 trace/user annotation
+- 已写入内容：五段详细说明、JWT/JSON header、path `name`、`token/tag/description/imageSources/veleroInstall` 全字段更新语义、`endpoint/kubeConfig` 不支持 PATCH 的事实、Secret 轮换/移除规则、`imageRegistry=""` 和 `username=""` 显式清空语义、`username` 可回显和 `password` 不回显的 DTO 脱敏返回、operator 异步编辑链路、当前错误分类
+- 取证备注：`tag=""` 会删除 cluster tag label，`description=""` 会删除备注 annotation，`imageSources: []` 会清空镜像源目录，`veleroInstall.imageRegistry=""` 会清空整段 Velero 安装配置，`veleroInstall.username=""` 会清空 registry 凭据；请求体没有任何支持字段时返回 200 当前 DTO，但不会执行 Update，也不会写 trace/user annotation
 - 主要错误点：JWT 失败由中间件返回 `401/403`；JSON、imageSources、veleroInstall 或 Kubernetes 对象校验失败返回 `400 code=1000`；目标 Cluster 不存在返回 `404 code=3004`；读取 Cluster、管理面 registry Secret 或更新 Cluster CR 的下层错误返回 `500 code=5000`
 
 ## POST /apis/cluster.testudo.softcdata.com/v1/clusters/:name/actions/refresh-namespaces
@@ -2065,10 +2065,10 @@
 - RunAPI 状态：已存在，已更新详细说明，保持 RunAPI `websocket2` 类型，URL 已确认是 `/watch/clusters`，已补充 `Authorization`、`Sec-WebSocket-Protocol` 和 query `token` 鉴权说明，原说明为空因此未追加 `## 原有说明`，已回读验证
 - server 路由：`internal/apis/disaster_cluster/v1/router.go`，`GET /apis/cluster.testudo.softcdata.com/v1/watch/clusters`
 - server handler：`internal/apis/disaster_cluster/v1/handler.go`，`ClusterHandler.watchClusters`
-- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` 支持 `?token=` 或 `Sec-WebSocket-Protocol` 转 Authorization -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> `watchutils.StreamWatch` -> WebSocket upgrade -> `Clusters().Watch(ctx, metav1.ListOptions{})` -> 连接成功消息 -> 30 秒心跳 -> Kubernetes watch event 转 `WatchEventDTO` -> `ConvertToDisasterClusterDTO` -> WebSocket JSON envelope
+- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` 支持 `?token=` 或 `Sec-WebSocket-Protocol` 转 Authorization -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> `watchutils.StreamWatch` -> WebSocket upgrade -> `Clusters().Watch(ctx, metav1.ListOptions{})` -> 连接成功消息 -> 30 秒心跳 -> Kubernetes watch event 转 `WatchEventDTO` -> `convertToDisasterClusterDTO` -> 若引用 server 管理的 Velero registry Secret 则解析 username -> WebSocket JSON envelope
 - operator 链路：本接口不触发 operator；实时推送 operator 和其他接口导致的 Cluster CR 创建、修改、删除事件
-- 下层资源链路：只读管理集群 Kubernetes watch 流中的 Cluster CR；不访问目标 Kubernetes 集群、Velero、StorageRepository、DisasterConfig、DisasterInstance 或对象存储
-- 已写入内容：五段详细说明、WebSocket 而非 SSE 的事实、三种鉴权方式、连接成功/心跳/watch event/closed/timeout 消息 envelope、事件 DTO 字段、默认 30 分钟超时与 30 秒心跳、当前错误分类
+- 下层资源链路：只读管理集群 Kubernetes watch 流中的 Cluster CR；当 Cluster 引用 server 管理的 Velero registry Secret 时，会只读管理面 `disaster-system/cluster-velero-regcred-<clusterName>` Secret 以解析 username；不访问目标 Kubernetes 集群、Velero、StorageRepository、DisasterConfig、DisasterInstance 或对象存储
+- 已写入内容：五段详细说明、WebSocket 而非 SSE 的事实、三种鉴权方式、连接成功/心跳/watch event/closed/timeout 消息 envelope、事件 DTO 字段、`veleroInstall.username` 可回显和 `password` 不回显、默认 30 分钟超时与 30 秒心跳、当前错误分类
 - 取证备注：ApiPost `websocket2` 目标回读时不保留普通 HTTP API 的 `auth/restful` 结构；本条通过 URL、header/query 参数和 description 记录鉴权与消息格式
 - 主要错误点：握手前 JWT 失败返回 `401/403`；WebSocket upgrade 失败返回普通 `500 {"message":"WebSocket 升级失败: <原因>"}`；已连接后 watcher 创建失败会通过 WebSocket 发送 `code=5000` error envelope
 
@@ -2078,10 +2078,10 @@
 - RunAPI 状态：已存在，已更新详细说明，保持 RunAPI `websocket2` 类型，URL 已由固定 `/watch/clusters/cluster-1` 修正为 `/watch/clusters/:name`，已补充 `Authorization`、`Sec-WebSocket-Protocol` 和 query `token` 鉴权说明，原说明为空因此未追加 `## 原有说明`，已回读验证
 - server 路由：`internal/apis/disaster_cluster/v1/router.go`，`GET /apis/cluster.testudo.softcdata.com/v1/watch/clusters/:name`
 - server handler：`internal/apis/disaster_cluster/v1/handler.go`，`ClusterHandler.watchCluster`
-- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` 支持 `?token=` 或 `Sec-WebSocket-Protocol` 转 Authorization -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> 读取 path `name` -> `watchutils.StreamWatch` -> WebSocket upgrade -> `Clusters().Watch(ctx, metav1.ListOptions{FieldSelector: metadata.name=<name>})` -> 连接成功消息 -> 30 秒心跳 -> 匹配名称的 Kubernetes watch event 转 `WatchEventDTO` -> `ConvertToDisasterClusterDTO` -> WebSocket JSON envelope
+- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` 支持 `?token=` 或 `Sec-WebSocket-Protocol` 转 Authorization -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> 读取 path `name` -> `watchutils.StreamWatch` -> WebSocket upgrade -> `Clusters().Watch(ctx, metav1.ListOptions{FieldSelector: metadata.name=<name>})` -> 连接成功消息 -> 30 秒心跳 -> 匹配名称的 Kubernetes watch event 转 `WatchEventDTO` -> `convertToDisasterClusterDTO` -> 若引用 server 管理的 Velero registry Secret 则解析 username -> WebSocket JSON envelope
 - operator 链路：本接口不触发 operator；实时推送指定 Cluster CR 的创建、修改、删除事件；若资源当前不存在，watch 仍可建立并等待后续匹配事件
-- 下层资源链路：只读管理集群 Kubernetes watch 流中的指定 Cluster CR；不访问目标 Kubernetes 集群、Velero、StorageRepository、DisasterConfig、DisasterInstance 或对象存储
-- 已写入内容：五段详细说明、WebSocket 而非 SSE 的事实、path `name` 语义、三种鉴权方式、field selector、连接成功/心跳/watch event/closed/timeout 消息 envelope、当前错误分类
+- 下层资源链路：只读管理集群 Kubernetes watch 流中的指定 Cluster CR；当 Cluster 引用 server 管理的 Velero registry Secret 时，会只读管理面 `disaster-system/cluster-velero-regcred-<clusterName>` Secret 以解析 username；不访问目标 Kubernetes 集群、Velero、StorageRepository、DisasterConfig、DisasterInstance 或对象存储
+- 已写入内容：五段详细说明、WebSocket 而非 SSE 的事实、path `name` 语义、三种鉴权方式、field selector、连接成功/心跳/watch event/closed/timeout 消息 envelope、`veleroInstall.username` 可回显和 `password` 不回显、当前错误分类
 - 取证备注：ApiPost `websocket2` 目标回读时未保留普通 restful parameter 结构；path 参数语义已体现在 URL `:name` 和 description 中
 - 主要错误点：path `name` 为空时 handler 返回 `400 code=1000`；握手前 JWT 失败返回 `401/403`；WebSocket upgrade 失败返回普通 `500 {"message":"WebSocket 升级失败: <原因>"}`；已连接后 watcher 创建失败会通过 WebSocket 发送 `code=5000` error envelope
 

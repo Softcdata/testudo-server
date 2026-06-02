@@ -151,6 +151,82 @@ func buildDockerConfigJSON(imageRegistry, username, password string) ([]byte, er
 	return json.Marshal(payload)
 }
 
+type dockerConfigJSONPayload struct {
+	Auths map[string]dockerAuthConfig `json:"auths"`
+}
+
+type dockerAuthConfig struct {
+	Username string `json:"username"`
+	Auth     string `json:"auth"`
+}
+
+func usernameFromDockerAuthConfig(auth dockerAuthConfig) string {
+	if username := strings.TrimSpace(auth.Username); username != "" {
+		return username
+	}
+	rawAuth := strings.TrimSpace(auth.Auth)
+	if rawAuth == "" {
+		return ""
+	}
+	decoded, err := base64.StdEncoding.DecodeString(rawAuth)
+	if err != nil {
+		return ""
+	}
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	return strings.TrimSpace(parts[0])
+}
+
+func usernameFromDockerConfigJSON(dockerConfigJSON []byte, imageRegistry string) string {
+	if len(dockerConfigJSON) == 0 {
+		return ""
+	}
+	var payload dockerConfigJSONPayload
+	if err := json.Unmarshal(dockerConfigJSON, &payload); err != nil {
+		return ""
+	}
+	if len(payload.Auths) == 0 {
+		return ""
+	}
+	authServer := registryAuthServer(imageRegistry)
+	if authServer != "" {
+		if auth, ok := payload.Auths[authServer]; ok {
+			return usernameFromDockerAuthConfig(auth)
+		}
+	}
+	if len(payload.Auths) == 1 {
+		for _, auth := range payload.Auths {
+			return usernameFromDockerAuthConfig(auth)
+		}
+	}
+	return ""
+}
+
+func (cluster *ClusterHandler) veleroRegistryUsername(c context.Context, item *dapisv1.Cluster) string {
+	if cluster == nil || cluster.K8sClient == nil || item == nil || item.Spec.VeleroInstall == nil {
+		return ""
+	}
+	ref := item.Spec.VeleroInstall.RegistryCredentialSecretRef
+	if !isManagedVeleroRegistrySecretRef(item.Name, ref) {
+		return ""
+	}
+	secret, err := cluster.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Get(c, ref.Name, matev1.GetOptions{})
+	if err != nil || secret.Type != corev1.SecretTypeDockerConfigJson {
+		return ""
+	}
+	return usernameFromDockerConfigJSON(secret.Data[corev1.DockerConfigJsonKey], item.Spec.VeleroInstall.ImageRegistry)
+}
+
+func (cluster *ClusterHandler) convertToDisasterClusterDTO(c context.Context, item *dapisv1.Cluster) DisasterClusterDTO {
+	dto := ConvertToDisasterClusterDTO(item)
+	if dto.Spec.VeleroInstall != nil {
+		dto.Spec.VeleroInstall.Username = cluster.veleroRegistryUsername(c, item)
+	}
+	return dto
+}
+
 func (cluster *ClusterHandler) upsertManagedVeleroRegistrySecret(ctx context.Context, namespace, clusterName, imageRegistry, username, password string) (*corev1.LocalObjectReference, bool, error) {
 	secretName := managedVeleroRegistrySecretName(clusterName)
 	dockerConfigJSON, err := buildDockerConfigJSON(imageRegistry, username, password)
@@ -281,7 +357,7 @@ func (cluster *ClusterHandler) clusters(c context.Context, ctx *app.RequestConte
 	// Convert to DTOs
 	dtos := make([]DisasterClusterDTO, len(pagedItems))
 	for i, item := range pagedItems {
-		dtos[i] = ConvertToDisasterClusterDTO(item)
+		dtos[i] = cluster.convertToDisasterClusterDTO(c, item)
 	}
 
 	// 6. 构建标准响应
@@ -379,7 +455,7 @@ func (cluster *ClusterHandler) cluster(c context.Context, ctx *app.RequestContex
 		transport.WriteError(ctx, transport.CodeInternalServerError, err.Error(), nil)
 		return
 	}
-	dto := ConvertToDisasterClusterDTO(item)
+	dto := cluster.convertToDisasterClusterDTO(c, item)
 	transport.WriteSuccess(ctx, consts.StatusOK, dto, nil)
 
 }
@@ -660,7 +736,7 @@ func (cluster *ClusterHandler) createCluster(c context.Context, ctx *app.Request
 		transport.WriteError(ctx, transport.CodeInternalServerError, err.Error(), nil)
 		return
 	}
-	dto := ConvertToDisasterClusterDTO(rc)
+	dto := cluster.convertToDisasterClusterDTO(c, rc)
 	transport.WriteSuccess(ctx, consts.StatusCreated, dto, nil)
 }
 
@@ -770,7 +846,7 @@ func (cluster *ClusterHandler) watchClusters(c context.Context, ctx *app.Request
 	}
 	watchutils.StreamWatch(c, ctx, watcherFunc, func(obj interface{}) interface{} {
 		if item, ok := obj.(*dapisv1.Cluster); ok {
-			return ConvertToDisasterClusterDTO(item)
+			return cluster.convertToDisasterClusterDTO(c, item)
 		}
 		return nil
 	})
@@ -792,7 +868,7 @@ func (cluster *ClusterHandler) watchCluster(c context.Context, ctx *app.RequestC
 	}
 	watchutils.StreamWatch(c, ctx, watcherFunc, func(obj interface{}) interface{} {
 		if item, ok := obj.(*dapisv1.Cluster); ok {
-			return ConvertToDisasterClusterDTO(item)
+			return cluster.convertToDisasterClusterDTO(c, item)
 		}
 		return nil
 	})
@@ -890,7 +966,7 @@ func (cluster *ClusterHandler) refreshNamespaces(c context.Context, ctx *app.Req
 	}
 
 	transport.WriteSuccess(ctx, consts.StatusAccepted, RefreshNamespacesAcceptedDTO{
-		Cluster: ConvertToDisasterClusterDTO(updated),
+		Cluster: cluster.convertToDisasterClusterDTO(c, updated),
 		Type:    req.Type,
 	}, nil)
 }
@@ -957,6 +1033,7 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 		if existing.Spec.VeleroInstall != nil {
 			effectiveImageRegistry = existing.Spec.VeleroInstall.ImageRegistry
 		}
+		imageRegistryProvided := req.VeleroInstall.ImageRegistry != nil
 		if req.VeleroInstall.ImageRegistry != nil {
 			effectiveImageRegistry = normalizeVeleroImageRegistry(*req.VeleroInstall.ImageRegistry)
 		}
@@ -975,7 +1052,19 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 			return
 		}
 
-		if req.VeleroInstall.ImageRegistry != nil {
+		clearVeleroInstall := imageRegistryProvided && effectiveImageRegistry == ""
+		clearCredential := removeCredential || (req.VeleroInstall.Username != nil && strings.TrimSpace(username) == "")
+
+		if clearVeleroInstall {
+			if oldManagedSecret {
+				if err := cluster.deleteManagedVeleroRegistrySecret(c, common.DisasterSystemNamespace, existing.Name); err != nil {
+					transport.WriteError(ctx, transport.CodeInternalServerError, err.Error(), nil)
+					return
+				}
+			}
+			existing.Spec.VeleroInstall = nil
+			updated = true
+		} else if imageRegistryProvided {
 			if existing.Spec.VeleroInstall == nil && effectiveImageRegistry != "" {
 				existing.Spec.VeleroInstall = &dapisv1.VeleroInstallSpec{}
 			}
@@ -999,7 +1088,7 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 			updated = true
 		}
 
-		if removeCredential {
+		if !clearVeleroInstall && clearCredential {
 			if oldManagedSecret {
 				if err := cluster.deleteManagedVeleroRegistrySecret(c, common.DisasterSystemNamespace, existing.Name); err != nil {
 					transport.WriteError(ctx, transport.CodeInternalServerError, err.Error(), nil)
@@ -1020,7 +1109,7 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 
 	if !updated {
 		// No changes
-		dto := ConvertToDisasterClusterDTO(existing)
+		dto := cluster.convertToDisasterClusterDTO(c, existing)
 		transport.WriteSuccess(ctx, consts.StatusOK, dto, nil)
 		return
 	}
@@ -1043,7 +1132,7 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 		return
 	}
 
-	dto := ConvertToDisasterClusterDTO(rc)
+	dto := cluster.convertToDisasterClusterDTO(c, rc)
 	transport.WriteSuccess(ctx, consts.StatusOK, dto, nil)
 }
 

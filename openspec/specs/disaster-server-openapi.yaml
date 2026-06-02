@@ -8311,7 +8311,7 @@ paths:
 
                 ## 4. 返回的详细说明
 
-                返回字段 schema 已先生成统一信封骨架，具体 data 字段、字段来源、可能取值、为空条件需要在逐接口阶段补齐。
+                返回统一 Envelope。`data` 为分页后的 `DisasterClusterDTO` 列表，`meta` 包含分页与链接信息。每个集群的 `spec.has_token` 与 `spec.has_kube_config` 只表示凭据是否存在，不回显 token 或 kubeconfig 原文。`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口永不返回 `password` 与 dockerconfigjson 原文。
 
                 ## 5. 可能返回的错误
 
@@ -8415,11 +8415,11 @@ paths:
 
                 ## 3. 入参的详细说明
 
-                请求体为 JSON。`name` 必传，作为 Cluster CR 名称，长度 1-50 并必须满足 Kubernetes metadata.name 规则。`description` 非必传，写入 `testudo.softcdata.com/description` annotation。`tag` 非必传，写入 `testudo.softcdata.com/cluster-tag` label。`kubeConfig`、`token`、`endpoint` 至少需要满足一种目标集群连接方式：kubeconfig 方式传 `kubeConfig`，token 方式传 `token` 与 `endpoint`。`imageSources` 非必传，用于保存可供后续实例级镜像改写引用的 registry 别名列表。`veleroInstall` 非必传，用于指定 Velero 安装镜像仓库和可选拉取凭据；`username/password` 必须成对出现，携带凭据时必须提供 `imageRegistry`。
+                请求体为 JSON。`name` 必传，作为 Cluster CR 名称，长度 1-50 并必须满足 Kubernetes metadata.name 规则。`description` 非必传，写入 `testudo.softcdata.com/description` annotation。`tag` 非必传，写入 `testudo.softcdata.com/cluster-tag` label。`kubeConfig`、`token`、`endpoint` 至少需要满足一种目标集群连接方式：kubeconfig 方式传 `kubeConfig`，token 方式传 `token` 与 `endpoint`。`imageSources` 非必传，用于保存可供后续实例级镜像改写引用的 registry 别名列表。`veleroInstall` 非必传，用于指定 Velero 安装镜像仓库和可选拉取凭据；`username/password` 必须成对出现，携带凭据时必须提供 `imageRegistry`。`username` 会写入管理平面 dockerconfigjson Secret 并可在响应 DTO 中回显，`password` 只用于生成 Secret，不会出现在响应中。
 
                 ## 4. 返回的详细说明
 
-                成功时 HTTP 状态码为 `201`，返回统一 Envelope。`data` 为创建后的 `DisasterClusterDTO`，包含 `id`、`name`、`description`、`labels`、`creation_timestamp`、脱敏后的 `spec` 和当前 `status`。`spec.has_token` 与 `spec.has_kube_config` 只表示凭据是否存在，不回显 token 或 kubeconfig 原文。创建响应是 CR 刚写入后的即时结果，operator 尚未 reconcile 时 status 字段可能为空，后续状态需要通过详情、列表或 watch 接口读取。
+                成功时 HTTP 状态码为 `201`，返回统一 Envelope。`data` 为创建后的 `DisasterClusterDTO`，包含 `id`、`name`、`description`、`labels`、`creation_timestamp`、脱敏后的 `spec` 和当前 `status`。`spec.has_token` 与 `spec.has_kube_config` 只表示凭据是否存在，不回显 token 或 kubeconfig 原文。`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；响应不返回 `password` 与 dockerconfigjson 原文。创建响应是 CR 刚写入后的即时结果，operator 尚未 reconcile 时 status 字段可能为空，后续状态需要通过详情、列表或 watch 接口读取。
 
                 ## 5. 可能返回的错误
 
@@ -8531,7 +8531,7 @@ paths:
 
                 ## 4. 返回的详细说明
 
-                返回字段 schema 已先生成统一信封骨架，具体 data 字段、字段来源、可能取值、为空条件需要在逐接口阶段补齐。
+                返回统一 Envelope。删除请求成功提交后，`data` 至少包含被删除的 Cluster 名称；实际 finalizer 清理状态需要通过后续查询、事件或 Kubernetes CR 删除进度确认。
 
                 ## 5. 可能返回的错误
 
@@ -8639,11 +8639,11 @@ paths:
 
                 ## 3. 入参的详细说明
 
-                请求字段 schema 已先生成骨架，字段中文含义、可传入值、传入目的、是否必传、约束与默认值需要在逐接口阶段补齐。
+                通过 path 参数 `name` 指定要查询的 Cluster 名称；该接口不使用请求体。
 
                 ## 4. 返回的详细说明
 
-                返回字段 schema 已先生成统一信封骨架，具体 data 字段、字段来源、可能取值、为空条件需要在逐接口阶段补齐。
+                返回统一 Envelope。`data` 为指定 Cluster 的 `DisasterClusterDTO`，包含 `id`、`name`、`description`、`labels`、`creation_timestamp`、脱敏后的 `spec` 和当前 `status`。`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口永不返回 `password` 与 dockerconfigjson 原文。
 
                 ## 5. 可能返回的错误
 
@@ -8751,11 +8751,11 @@ paths:
 
                 ## 3. 入参的详细说明
 
-                请求字段 schema 已先生成骨架，字段中文含义、可传入值、传入目的、是否必传、约束与默认值需要在逐接口阶段补齐。
+                请求体为 JSON，所有字段均为局部更新。支持 `token`、`tag`、`description`、`imageSources`、`veleroInstall`。未携带字段表示保持原值。`veleroInstall.imageRegistry` 传非空值时修改 Velero 安装镜像仓库前缀，传空字符串时删除 server 管理的 registry Secret 并清空整段 `Cluster.spec.veleroInstall`。`veleroInstall.username/password` 传非空值时必须成对出现，用于轮换管理平面 dockerconfigjson Secret；`veleroInstall.username` 传空字符串时删除 server 管理的 registry Secret 并清空 `Cluster.spec.veleroInstall.registryCredentialSecretRef`，但保留 `imageRegistry`。`veleroInstall.removeCredential=true` 执行同一凭据清空语义。未携带 username/password 不代表删除凭据。
 
                 ## 4. 返回的详细说明
 
-                返回字段 schema 已先生成统一信封骨架，具体 data 字段、字段来源、可能取值、为空条件需要在逐接口阶段补齐。
+                返回统一 Envelope。`data` 为更新后的 `DisasterClusterDTO`。`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口永不返回 `password` 与 dockerconfigjson 原文。若请求体没有任何支持字段，接口返回当前 DTO，不执行 Kubernetes Update。
 
                 ## 5. 可能返回的错误
 
@@ -8868,7 +8868,7 @@ paths:
 
                 ## 4. 返回的详细说明
 
-                返回字段 schema 已先生成统一信封骨架，具体 data 字段、字段来源、可能取值、为空条件需要在逐接口阶段补齐。
+                成功时返回 HTTP `202` 统一 Envelope。`data.cluster` 为写入刷新 annotation 后的 `DisasterClusterDTO`，其 `spec.veleroInstall` 与详情接口保持一致：存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口不返回 `password` 与 dockerconfigjson 原文。
 
                 ## 5. 可能返回的错误
 
@@ -9534,7 +9534,7 @@ paths:
 
                 ## 4. 返回的详细说明
 
-                返回字段 schema 已先生成统一信封骨架，具体 data 字段、字段来源、可能取值、为空条件需要在逐接口阶段补齐。
+                WebSocket 推送统一 Envelope 包裹的 watch event。事件 data 中的 Cluster DTO 与详情接口保持一致：`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；事件不返回 `password` 与 dockerconfigjson 原文。
 
                 ## 5. 可能返回的错误
 
@@ -9631,7 +9631,7 @@ paths:
 
                 ## 4. 返回的详细说明
 
-                返回字段 schema 已先生成统一信封骨架，具体 data 字段、字段来源、可能取值、为空条件需要在逐接口阶段补齐。
+                WebSocket 推送统一 Envelope 包裹的 watch event。事件 data 中的 Cluster DTO 与详情接口保持一致：`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；事件不返回 `password` 与 dockerconfigjson 原文。
 
                 ## 5. 可能返回的错误
 
