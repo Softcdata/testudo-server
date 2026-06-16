@@ -427,16 +427,17 @@
 ## POST /apis/disasterinstances.testudo.softcdata.com/v1/instances
 
 - RunAPI Target ID：`1c01f46f55801000`
-- RunAPI 状态：已存在，已更新详细说明，已补齐 `Authorization` header、raw JSON body/schema、当前 201/400/403/409/500 响应示例，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，原说明已保留到 `## 原有说明`，已回读验证；2026-05-22 已追加 `ModifierRuleRejected：replace 缺失最终路径仍拒绝` 400 响应示例
+- RunAPI 状态：已存在，已更新详细说明，已补齐 `Authorization` header、raw JSON body/schema、当前 201/400/403/409/500 响应示例，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，原说明已保留到 `## 原有说明`，已回读验证；2026-05-22 已追加 `ModifierRuleRejected：replace 缺失最终路径仍拒绝` 400 响应示例；2026-06-15 已在 live RunAPI 前置追加 `bulkModifierActions` 受保护路径扫描修复说明并回读验证
 - server 路由：`internal/apis/disaster_instance/v1/router.go`
 - server handler：`internal/apis/disaster_instance/v1/handler.go`，`InstanceHandler.createInstance`
 - 请求链路：`rejectUnsupportedSyncPolicyField(ctx.Request.Body())` -> `BindJSON(CreateDisasterInstanceRequest)` -> `req.ToCRD()` -> `DisasterConfigs().Get(req.Config)` -> `validateProtectedNamespaces(config.Spec.SourceCluster, spec.Namespaces, "", "")` -> `prepareRestorePolicyForPersist(c, &spec, nil)` -> 默认 `namespace=disaster-system` 与 `podRestoreMethod=replica` -> `SetTraceAnnotation` -> `DisasterInstances(ns).Create` -> `ConvertToDisasterInstanceDTO(rc, config, nil)` -> `WriteSuccess(201)`
-- restore policy 解析链路：`ResolveRestorePolicy` 会解析 `resourceSelection`、`execution`、`storageClassMapping`、`ingressClassMapping`、`bulkModifierActions`、`bulkModifierActionsText`、`modifierRules`、`modifierRulesText`、`useUnifiedDirectionResolver`；文本入口与结构化入口同时存在时必须语义一致；资源 include/exclude、modifier rule 结构和 live 路径校验失败都会在创建前返回 `400`；live path 校验按 JSON Patch 语义处理，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在
+- restore policy 解析链路：`ResolveRestorePolicy` 会解析 `resourceSelection`、`execution`、`storageClassMapping`、`ingressClassMapping`、`bulkModifierActions`、`bulkModifierActionsText`、`modifierRules`、`modifierRulesText`、`useUnifiedDirectionResolver`；文本入口与结构化入口同时存在时必须语义一致；资源 include/exclude、modifier rule 结构和 live 路径校验失败都会在创建前返回 `400`；live path 校验按 JSON Patch 语义处理，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 快照生成阶段会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**`，因此镜像值同时出现在 workload spec 和 Pod status 时不会为 status 路径生成快照规则，也不要求用户用 `resourceSelection.excludedResources=["pods"]` 规避
+- live 文档同步：Apipost Target ID `1c01f46f55801000` 已回读完整详情后保留原说明，并在描述前置追加 `2026-06-15 bulkModifierActions 受保护路径扫描修复`，避免覆盖既有 request/response 示例
 - operator 链路：创建 `DisasterInstance` 后触发 `DisasterInstanceReconciler`；operator 添加 finalizer、同步依赖 label、把空 `status.fsmState` 初始化为 `Pending`，随后创建/更新 `DataSync` `dr-ds-<instance>` 和 `ResourceSync` `dr-rs-<instance>`，写入主备集群并进入 `Initializing`
 - 下层资源链路：本接口不直接创建 Velero 资源；后续由 `DataSync`/`ResourceSync` controller 基于实例范围和恢复策略驱动 AppBackup/AppRestore、Velero `Backup`、Velero `Restore` 与目标集群 standby 资源
 - 已写入内容：五段详细说明、完整创建入参字段说明、`syncPolicy` 禁用说明、实例级双策略 override 继承语义、受保护命名空间冲突 meta、restorePolicy 嵌套字段和 modifier 规则约束、同步创建响应状态为空/`currentState=Unknown` 的当前实现说明、operator 异步状态推进说明，旧说明完整保留到 `## 原有说明`
 - 取证备注：创建接口同步返回的是 API Server 刚写入的对象，operator 通常尚未回写 `status.fsmState`，因此当前实现的同步成功示例按 `status={}` 与 `currentState=Unknown` 写入；原 RunAPI 示例中 `Pending` 类描述保留为历史说明
-- 主要错误点：顶层 `syncPolicy`、JSON/binding、`Config <name> not found`、`ResourceSelectionInvalid`、`ModifierRulesTextInvalid`、`BulkModifierActionsTextInvalid`、`ModifierRulesInputConflict`、`BulkModifierActionsInputConflict`、`ModifierRuleRejected`（例如 `add` 父路径不存在、`replace/remove` 路径不存在）或 Kubernetes Invalid/BadRequest 返回 `400 code=1000`；受保护命名空间冲突或同名实例返回 `409 code=3009`；RBAC 禁止创建返回 `403 code=2003`；配置读取非 NotFound、保护索引构建或 Kubernetes 创建内部错误返回 `500 code=5000`；operator 后续 `ConfigError`、`PolicyNotReady`、`DataSyncFailed`、`ResourceSyncFailed`、`InitializationFailed` 不作为本接口同步错误返回，只通过状态接口、详情、列表或 watch 体现
+- 主要错误点：顶层 `syncPolicy`、JSON/binding、`Config <name> not found`、`ResourceSelectionInvalid`、`ModifierRulesTextInvalid`、`BulkModifierActionsTextInvalid`、`ModifierRulesInputConflict`、`BulkModifierActionsInputConflict`、`ModifierRuleRejected`（例如 `add` 父路径不存在、`replace/remove` 路径不存在、bulk action 过滤受保护路径后没有可执行命中）或 Kubernetes Invalid/BadRequest 返回 `400 code=1000`；受保护命名空间冲突或同名实例返回 `409 code=3009`；RBAC 禁止创建返回 `403 code=2003`；配置读取非 NotFound、保护索引构建或 Kubernetes 创建内部错误返回 `500 code=5000`；operator 后续 `ConfigError`、`PolicyNotReady`、`DataSyncFailed`、`ResourceSyncFailed`、`InitializationFailed` 不作为本接口同步错误返回，只通过状态接口、详情、列表或 watch 体现
 
 ## DELETE /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name
 
@@ -468,16 +469,17 @@
 ## PUT /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name
 
 - RunAPI Target ID：`1c01f4718c001000`
-- RunAPI 状态：已存在，已更新详细说明，已补齐 `Authorization`、`Content-Type` header、`name` path 参数、`namespace` query 参数、raw JSON body/schema 和当前 200/400/403/404/409/500 响应示例，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，原说明已保留到 `## 原有说明`，已回读验证；2026-05-22 已追加 `ModifierRuleRejected：replace 缺失最终路径仍拒绝` 400 响应示例
+- RunAPI 状态：已存在，已更新详细说明，已补齐 `Authorization`、`Content-Type` header、`name` path 参数、`namespace` query 参数、raw JSON body/schema 和当前 200/400/403/404/409/500 响应示例，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，原说明已保留到 `## 原有说明`，已回读验证；2026-05-22 已追加 `ModifierRuleRejected：replace 缺失最终路径仍拒绝` 400 响应示例；2026-06-15 已在 live RunAPI 前置追加 `bulkModifierActions` 受保护路径扫描修复说明并回读验证
 - server 路由：`internal/apis/disaster_instance/v1/router.go`
 - server handler：`internal/apis/disaster_instance/v1/handler.go`，`InstanceHandler.updateInstance`
 - 请求链路：`path.name` -> `rejectUnsupportedSyncPolicyField` -> `BindJSON(UpdateDisasterInstanceRequest)` -> `ResolveRestorePolicy` -> 可选 `query.namespace` 或 `findNamespace` -> `RetryOnConflict` 中读取现有实例 -> 按出现字段更新 spec/annotation -> 重新做受保护 namespace 冲突校验 -> 按出现的 `restorePolicy` 子字段合并 -> 必要时 `prepareRestorePolicyForPersist` -> `Update` -> 尽力读取 `DisasterConfig` -> `ConvertToDisasterInstanceDTO` -> `WriteSuccess(200)`
 - 更新语义：`dataSyncPolicy/resourceSyncPolicy` 未传或 `null` 保持原值，空字符串清空 override；`namespaces` 未传或 `null` 保持原值，空数组清空；`labelSelector` 未传或 `null` 保持原值，传对象整体替换；`description` 空字符串清空；`restorePolicy` 未传或 `null` 不更新，传对象时只合并对象中出现的子字段
 - operator 链路：更新 CRD 后触发 `DisasterInstanceReconciler`；operator 继续同步 dependency labels，按实例 override 或配置继承值更新 `DataSync`/`ResourceSync` schedule，后续 DataSync/ResourceSync/Drill 使用更新后的恢复策略构建 AppRestore
-- 下层资源链路：更新接口不直接访问 Velero 或业务集群；只有在 bulk modifier 需要重建快照或 modifier rule live 校验时，server 会读取源集群资源来验证和生成 `modifierRuleSnapshot`；live path 校验按 JSON Patch 语义处理，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在
+- 下层资源链路：更新接口不直接访问 Velero 或业务集群；只有在 bulk modifier 需要重建快照或 modifier rule live 校验时，server 会读取源集群资源来验证和生成 `modifierRuleSnapshot`；live path 校验按 JSON Patch 语义处理，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 快照生成阶段会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**`，因此镜像值同时出现在 workload spec 和 Pod status 时不会为 status 路径生成快照规则，也不要求用户用 `resourceSelection.excludedResources=["pods"]` 规避
+- live 文档同步：Apipost Target ID `1c01f4718c001000` 已回读完整详情后保留原说明，并在描述前置追加 `2026-06-15 bulkModifierActions 受保护路径扫描修复`，避免覆盖既有 request/response 示例
 - 已写入内容：五段详细说明、全部可更新字段的未传/null/空值语义、`restorePolicy` 子字段合并和清空语义、modifier 文本入口与结构化入口冲突规则、namespace 冲突 meta、响应 DTO 和当前错误分类
 - 取证备注：该接口使用 `RetryOnConflict`，但最终返回的 Kubernetes resourceVersion 冲突未单独映射为 `409`；除受保护 namespace 冲突外，重试耗尽后会进入通用 `500 code=5000`
-- 主要错误点：顶层 `syncPolicy`、JSON/binding、现有实例 `spec.config` 无法通过 lister 找到、恢复策略校验失败（例如 `add` 父路径不存在、`replace/remove` 路径不存在）或 Kubernetes Invalid/BadRequest 返回 `400 code=1000`；目标不存在返回 `404 code=3004`；受保护命名空间冲突返回 `409 code=3009`；RBAC 禁止更新返回 `403 code=2003`；重试耗尽、读取或更新 CRD 非分类错误返回 `500 code=5000`；operator 后续失败只体现在实例状态字段中
+- 主要错误点：顶层 `syncPolicy`、JSON/binding、现有实例 `spec.config` 无法通过 lister 找到、恢复策略校验失败（例如 `add` 父路径不存在、`replace/remove` 路径不存在、bulk action 过滤受保护路径后没有可执行命中）或 Kubernetes Invalid/BadRequest 返回 `400 code=1000`；目标不存在返回 `404 code=3004`；受保护命名空间冲突返回 `409 code=3009`；RBAC 禁止更新返回 `403 code=2003`；重试耗尽、读取或更新 CRD 非分类错误返回 `500 code=5000`；operator 后续失败只体现在实例状态字段中
 
 ## POST /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/actions
 
@@ -656,13 +658,13 @@
 - RunAPI 状态：已存在，已更新详细说明，已补齐 `Authorization`、`Content-Type` header、raw JSON body/schema、当前 201/400/404/409/500 响应示例，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，原说明已保留到 `## 原有说明`，已回读验证；2026-05-22 已追加 `ModifierRuleRejected：replace 缺失最终路径仍拒绝` 400 响应示例
 - server 路由：`internal/apis/disaster_drill/v1/router.go`
 - server handler：`internal/apis/disaster_drill/v1/handler.go`，`DrillHandler.createDrill`
-- 请求链路：`BindJSON(CreateDrillRequest)` -> 校验 `instanceName/groupName` 二选一且不能同时传 -> 校验 `name` 长度不超过 63 -> 默认 `namespace=disaster-system` -> 按实例或组在指定 namespace 查询，NotFound 时全 namespace 按名称回退查询并切换到目标对象真实 namespace -> `buildPreparedDrillRestorePolicy` -> 自动生成或使用请求演练名 -> 写入 `DisasterDrill` -> `WriteSuccess(201, DisasterDrillDTO)`
+- 请求链路：`BindJSON(CreateDrillRequest)` -> 校验 `instanceName/groupName` 二选一且不能同时传 -> 校验 `name` 长度不超过 63 -> 校验 `veleroHooks.dataBackup` 禁止、`veleroHooks.dataRestore` 合法性，并保留顶层 `veleroHooks:{}` 为空对象覆盖语义 -> 默认 `namespace=disaster-system` -> 按实例或组在指定 namespace 查询，NotFound 时全 namespace 按名称回退查询并切换到目标对象真实 namespace -> `buildPreparedDrillRestorePolicy` -> 自动生成或使用请求演练名 -> 写入 `DisasterDrill` -> `WriteSuccess(201, DisasterDrillDTO)`
 - restorePolicy 准备链路：请求体 `restorePolicy` 先执行 `RestorePolicyRequest.ToCRD`，解析 `modifierRulesText`、`bulkModifierActionsText`，校验 resourceSelection include/exclude 冲突；随后复用实例模块 `PrepareRestorePolicyForPersist` 归一化 bulk action、生成 `modifierRuleSnapshot/modifierRuleSnapshotHash`、校验 modifier rule 与可选 live 校验；live path 校验按 JSON Patch 语义处理，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在
 - 组演练 restorePolicy 额外链路：读取 `DisasterGroup.spec.levels` 内所有实例，读取各实例 `spec.config` 指向的 `DisasterConfig.spec.sourceCluster`；成员实例必须能解析到唯一 sourceCluster，否则创建阶段返回 `400`
-- operator 链路：`DisasterDrillReconciler` 为 Drill 加 finalizer、同步依赖标签，首次 reconcile 初始化 `Pending/startTime/message`；Pending 校验实例或组、目标集群和 Cluster Ready 后写入 `Ready/restoreMode=FullRestore`；确认后创建 `OperationType=drill` 的 `DisasterOperation`；Operation 继续执行 `RestoreResource/RestoreData/ScaleUp`
+- operator 链路：`DisasterDrillReconciler` 为 Drill 加 finalizer、同步依赖标签，首次 reconcile 初始化 `Pending/startTime/message`；Pending 校验实例或组、目标集群和 Cluster Ready 后写入 `Ready/restoreMode=FullRestore`；确认后创建 `OperationType=drill` 的 `DisasterOperation`，并将 `drill.spec.veleroHooks` 原样复制到 `operation.spec.drillConfig.veleroHooks`；Operation 继续执行 `RestoreResource/RestoreData/ScaleUp`
 - 下层资源链路：创建接口不直接访问业务集群、Velero、S3、Deployment、PVC 或 Namespace；后续 Operation 会读取 DataSync/ResourceSync 最近备份、创建 AppRestore，并在资源/数据恢复时应用实例 restorePolicy 与演练级 restorePolicy override
-- 已写入内容：五段详细说明、全部 body/header 参数、二选一和默认 namespace 语义、目标实例/组 namespace 回退逻辑、演练级 restorePolicy 覆盖与继承语义、bulk action 与 modifier rule 的取值/约束、完整 `DisasterDrillDTO` 字段、创建即时响应 `status.state` 可能为空的当前事实、server 同步错误与 operator 异步失败边界
-- 取证备注：RunAPI 旧说明已包含基础示例和 restorePolicy 概要，但成功状态码和响应结构仍是历史平铺字段；当前 server 实际返回 HTTP `201`，`data.status` 为对象，且 Kubernetes Create 后立即返回时 status 可能尚未由 operator 初始化，因此新说明和默认成功示例按当前实现写入，旧说明和旧示例保留
+- 已写入内容：五段详细说明、全部 body/header 参数、二选一和默认 namespace 语义、目标实例/组 namespace 回退逻辑、演练级 restorePolicy 覆盖与继承语义、`veleroHooks:{}` 清空继承语义、bulk action 与 modifier rule 的取值/约束、完整 `DisasterDrillDTO` 字段、创建即时响应 `status.state` 可能为空的当前事实、server 同步错误与 operator 异步失败边界
+- 取证备注：RunAPI 旧说明已包含基础示例和 restorePolicy 概要，但成功状态码和响应结构仍是历史平铺字段；当前 server 实际返回 HTTP `201`，`data.status` 为对象，且 Kubernetes Create 后立即返回时 status 可能尚未由 operator 初始化，因此新说明和默认成功示例按当前实现写入，旧说明和旧示例保留。显式 `veleroHooks:{}` 会写入 Drill CR 的非 nil 空对象，使后续 Operation 保留清空覆盖，避免继承实例级 dataRestore Hook
 - 主要错误点：JSON 解析失败、`instanceName/groupName` 同传或都不传、`name` 超 63 字符、restorePolicy 文本 JSON 非法、结构化与文本输入冲突、resourceSelection 冲突、modifier rule/bulk action 非法或 live 校验失败（例如 `add` 父路径不存在、`replace/remove` 路径不存在）、组演练 restorePolicy 成员实例 sourceCluster 不唯一返回 `400 code=1000`；目标实例或组不存在返回 `404 code=3004`；同名 Drill 已存在返回 `409 code=3009`；目标对象 namespaced Get 非 NotFound 或创建 Drill 非 AlreadyExists 错误返回 `500 code=5000`；JWT 失败由中间件返回 `401 code=2001`
 
 ## DELETE /apis/disasterdrills.testudo.softcdata.com/v1/drills/:name
@@ -1340,8 +1342,8 @@
 - 请求链路：`BindJSON(CreateAppRestoreRequest)` -> `resolveStorageClassMapping(storageClassMapping, scMapping)` -> 构造 `AppRestore(disaster-system)` 并写入描述、trace、user annotation -> 读取源 `AppBackup(disaster-system, backupSource)` -> 校验源 AppBackup `spec.cluster` 和 `spec.template.storageLocation` -> body 未传 `backupName` 时使用 `AppBackup.status.history[0].name` -> 由恢复映射字段生成 `ResourceModifierRules` -> `ValidateClusterReady(cluster)` -> 获取目标集群 client -> `VerifyRestorePreflight(targetCli, runtimeClient, appBackup, cluster, 0)` -> 校验 `existingResourcePolicy` 只能为空、`none`、`update` -> 创建 `AppRestore` -> `ConvertToAppRestoreDTO` -> `WriteSuccess(201)`
 - operator 链路：`AppRestoreReconciler` 添加 finalizer；跨集群恢复时根据 `sourceCluster/storageRepository` 在目标集群创建或刷新 Velero `BackupStorageLocation`；读取目标集群 Velero `Backup`；计算 `status.targetNamespaces`；同步源 AppBackup 的 `Manual/Schedule` 类型 label；创建资源修改规则 `ConfigMap`；创建目标集群 `velero` 命名空间下的 Velero `Restore(res-<AppRestore.name>)`；观测 Restore phase 后回写 `status.status/restoreStatus/reason/message/lastAction`；删除或取消时清理 Velero Restore、ResourceModifier ConfigMap 和部分 Pending 资源
 - 下层资源链路：创建接口同步读取管理集群 `AppBackup` 和 `Cluster`，并通过目标集群 client 校验 Velero `BackupStorageLocation`；operator 后续访问目标集群 Velero `Backup/Restore/PodVolumeRestore`、资源修改 `ConfigMap`、存储仓库对应 BSL 和实际业务资源
-- 已写入内容：五段详细说明、无 path/query 的事实、`name/backupSource/cluster` 必填、`backupName` 缺省推导、`existingResourcePolicy` 取值和校验时机、`timeout` 写入 `spec.template.itemOperationTimeout`、`storageClassMapping` 与 `scMapping` 兼容冲突规则、`restorePVs/cleanVolumes` 自动追加 PVC `volumeName` 清理规则、StorageClass/IngressClass 映射、缩容/待机/无流量恢复规则、uploader 配置、创建成功 DTO 字段、operator 异步恢复边界、当前错误分类
-- 取证备注：`cleanVolumes=true` 或 `restorePVs=true` 都会追加 PVC 清理规则；`scaleToZeroList` 和 `standbyList` 传单元素 `*` 时匹配全部，否则生成 workload 名称正则且当前代码不转义正则特殊字符；创建成功只代表 `AppRestore` CR 创建完成，不代表 Velero Restore 已完成；`existingResourcePolicy` 当前在 preflight 之后校验，非法值可能先触发目标集群前置校验
+- 已写入内容：五段详细说明、无 path/query 的事实、`name/backupSource/cluster` 必填、`backupName` 缺省推导、`existingResourcePolicy` 取值和校验时机、`timeout` 写入 `spec.template.itemOperationTimeout`、`storageClassMapping` 与 `scMapping` 兼容冲突规则、`restorePVs/cleanVolumes` 自动追加幂等 PVC `volumeName` 清理规则、StorageClass/IngressClass 映射、缩容/待机/无流量恢复规则、uploader 配置、创建成功 DTO 字段、operator 异步恢复边界、当前错误分类
+- 取证备注：`cleanVolumes=true` 或 `restorePVs=true` 都会追加 PVC 清理规则；当前规则使用 JSON Patch `add /spec/volumeName` 且 value 为空字符串，避免字段不存在时 `remove` 失败导致 Velero Restore `PartiallyFailed`；update 会将 legacy `remove /spec/volumeName` 规范化为新的幂等规则。`scaleToZeroList` 和 `standbyList` 传单元素 `*` 时匹配全部，否则生成 workload 名称正则且当前代码不转义正则特殊字符；创建成功只代表 `AppRestore` CR 创建完成，不代表 Velero Restore 已完成；`existingResourcePolicy` 当前在 preflight 之后校验，非法值可能先触发目标集群前置校验
 - 主要错误点：JSON 绑定失败、必填缺失、StorageClass 映射冲突、源 AppBackup 缺少必要字段、未传 `backupName` 且源 AppBackup 无 history、目标集群不存在或非 Ready、目标集群 client 获取失败、preflight 异常或未通过、`existingResourcePolicy` 非法均返回 `400/500` 对应业务错误；源 AppBackup 不存在返回 `404 code=3004`；同名 AppRestore 返回 `409 code=3009`；创建 CR 非冲突错误返回 `500 code=5000`；JWT 失败返回 `401` 或中间件自定义普通 JSON；Velero Restore 创建失败、资源修改 ConfigMap 创建失败、恢复执行失败、PVR 卡住和恢复超时等 operator 异步问题不作为创建接口同步错误返回
 
 ## DELETE /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name
@@ -1376,11 +1378,11 @@
 - RunAPI 状态：已存在，已更新详细说明，URL 保持为 `{{baseurl}}/apis/apprestores.testudo.softcdata.com/v1/apprestores/:name`，鉴权类型为继承项目鉴权，已补齐 `Authorization`/`Content-Type` header、path `name` 参数、当前合法 JSON body 示例、无 binding 必填 body 字段的 schema、200/400/404/409 响应示例，原说明已保留到 `## 原有说明`，已回读验证
 - server 路由：`internal/apis/app_restore/v1/router.go`
 - server handler：`internal/apis/app_restore/v1/handler.go`，`AppRestoreHandler.updateAppRestore`
-- 请求链路：`BindJSON(UpdateAppRestoreRequest)` -> 归一化 path `name` 和兼容 body `name` -> 校验 URL/body 名称一致 -> `resolveStorageClassMapping(storageClassMapping, scMapping)` -> 校验 `existingResourcePolicy` 只能为空、`none`、`update` -> `RetryOnConflict` 内 Get 现有 AppRestore -> `MergeToCRD` 合并非空/非 nil 字段 -> 追加 StorageClass/IngressClass/ScaleToZero/Standby ResourceModifierRule -> `cleanVolumes=true` 或 `restorePVs=true` 时确保 PVC `volumeName` 清理规则 -> 更新 trace/user annotation -> 按需更新或删除 description annotation -> Update AppRestore -> `ConvertToAppRestoreDTO` -> `WriteSuccess(200)`
+- 请求链路：`BindJSON(UpdateAppRestoreRequest)` -> 归一化 path `name` 和兼容 body `name` -> 校验 URL/body 名称一致 -> `resolveStorageClassMapping(storageClassMapping, scMapping)` -> 校验 `existingResourcePolicy` 只能为空、`none`、`update` -> `RetryOnConflict` 内 Get 现有 AppRestore -> `MergeToCRD` 合并非空/非 nil 字段 -> 追加 StorageClass/IngressClass/ScaleToZero/Standby ResourceModifierRule -> `cleanVolumes=true` 或 `restorePVs=true` 时确保幂等 PVC `volumeName` 清理规则并替换 legacy remove -> 更新 trace/user annotation -> 按需更新或删除 description annotation -> Update AppRestore -> `ConvertToAppRestoreDTO` -> `WriteSuccess(200)`
 - operator 链路：更新 AppRestore CR 后触发 reconcile；如果对象仍在 `Pending/Initiating/Restoring` 等阶段，operator 后续可能读取更新后的 `spec.cluster/spec.template/spec.resourceModifierRules`；如果 Velero Restore 已创建，很多 RestoreSpec 字段和 resource modifier 规则不会自动作用到已创建的 Velero Restore，通常需要配合动作接口 retry；已处于 `Succeeded/Failed/Cancelled` 等终态的对象不会因普通 spec 更新自动重置为 `Pending`
 - 下层资源链路：更新接口本身只读写管理集群 `AppRestore` CR，不访问源 AppBackup、目标 Cluster、目标集群、Velero API、BSL 或对象存储；operator 后续才可能根据更新后的 CR 访问目标集群 Velero Backup/Restore、ResourceModifier ConfigMap 和业务资源
 - 已写入内容：五段详细说明、无 query 的事实、path `name` 与 body `name` 兼容和冲突规则、所有可更新 body 字段、`description` 空字符串删除 annotation、数组/map 空值不会清空旧值、`cleanVolumes=false` 不删除已有清理规则、映射/缩容/待机规则追加而非替换、更新不做 Ready/preflight/源 AppBackup 校验、成功 DTO 字段、当前错误分类
-- 取证备注：旧 RunAPI schema 把 body `name` 和 `cleanVolumes` 标成必填，与当前代码不符，已改为无 body 必填字段；`storageClassMapping/ingressClassMapping/scaleToZeroList/standbyList` 重复更新可能追加重复 rules，只有 PVC `volumeName` 清理规则会通过 `ensureCleanVolumeRule` 去重；Update 成功响应不直接返回 `spec.resourceModifierRules`
+- 取证备注：旧 RunAPI schema 把 body `name` 和 `cleanVolumes` 标成必填，与当前代码不符，已改为无 body 必填字段；`storageClassMapping/ingressClassMapping/scaleToZeroList/standbyList` 重复更新可能追加重复 rules，只有 PVC `volumeName` 清理规则会通过 `ensureCleanVolumeRule` 去重并规范化为 `add /spec/volumeName` 空值；Update 成功响应不直接返回 `spec.resourceModifierRules`
 - 主要错误点：JSON 绑定失败、资源名为空、URL/body 名称不一致、StorageClass 兼容字段冲突、`existingResourcePolicy` 非法返回 `400 code=1000`；AppRestore 不存在返回 `404 code=3004`；资源版本冲突多次重试后仍失败返回 `409 code=3009`；Get/Update 非 NotFound/Conflict 错误返回 `500 code=5000`；JWT 失败返回 `401` 或中间件自定义普通 JSON；更新后的源/目标/Velero 下层问题不作为本接口同步错误返回
 
 ## POST /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name/actions/:type
@@ -2130,3 +2132,46 @@
 - 影响模块：DisasterGroup、DisasterInstance、DisasterDrill、AppBackup/AppRestore 的 StorageRepository 链路、DisasterConfig/DisasterPolicy 依赖链路、DataSync/ResourceSync StorageRepository ready 检查、Cluster ensure-storage、license status runnable、cluster-scoped event 默认 namespace。
 - 行为说明：安装到非默认 namespace 时，server 和 operator 使用 chart 渲染的管理命名空间读写管理面 namespaced CR/Secret/ConfigMap/Event；默认值仍为 `disaster-system`。
 - OpenAPI 状态：已将 `openspec/specs/disaster-server-openapi.yaml` 中与固定 `disaster-system` 资源范围相关的描述改为“配置的管理命名空间（默认 `disaster-system`）”。
+
+## Velero Hook 透传 API 契约
+
+- RunAPI 状态：已通过 Apipost MCP 回读受影响 API target，并完成 live 同步。共享 Markdown 文档 `Velero Hook 透传 API 契约` 已重建为字段释义版当前契约，Target ID `1ca8437f2a401000`；为 AppBackup/AppRestore/DisasterInstance/DisasterDrill 相关接口新增当前 hooks、hookStatus、敏感参数拒绝响应示例。2026-06-09 已为 AppRestore list/detail/watch 四个 target 追加 `PartiallyFailed` 响应或事件帧示例。为避免覆盖既有超长接口说明，未批量重写原接口 description。
+- 2026-06-10 补充：因 Apipost `update_target` 对 Markdown doc 返回成功但回读正文和标题均未变，已删除旧文档 Target ID `1ca486eeb4001000`、临时当前版 Target ID `1ca6eaf0e8001000`、上一版 Target ID `1ca6ecb4e7401000` 和字段释义版 Target ID `1ca6ef895f001000`，并使用正确内容重新创建同名文档 `Velero Hook 透传 API 契约`，最终 Target ID `1ca8437f2a401000`。该文档明确 Velero 原生字段名：Backup 使用 `resources[].pre/post` 且只支持 exec；Restore 使用 `resources[].postHooks` 且支持 exec/init、没有 `preHooks`；同时补充多个 `resources[]`、多个 `pre[]/post[]` exec、前端表单映射、DisasterInstance 创建/更新传参、DisasterDrill 覆盖/清空继承传参、敏感参数约束，以及每个 Hook 字段的中文释义。
+- 受影响接口与 Target ID：
+  - AppBackup：`GET /apis/appbackups.testudo.softcdata.com/v1/appbackups` (`2a25b664f8c042`)，`POST /apis/appbackups.testudo.softcdata.com/v1/appbackups` (`3ee68503b8c051`、`3efbb43238c57f`)，`GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name` (`2a25b664f8c043`)，`PUT /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name` (`3ee6850438c053`)，`GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/history` (`1bd4dbb7f4401001`)
+  - AppRestore：`GET /apis/apprestores.testudo.softcdata.com/v1/apprestores` (`34a0ae4978c001`)，`POST /apis/apprestores.testudo.softcdata.com/v1/apprestores` (`3ee6850478c056`)，`GET /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name` (`34a0ae49b8c002`)，`PUT /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name` (`3ee68504b8c058`)，`GET /apis/apprestores.testudo.softcdata.com/v1/watch/apprestores` (`34a10209f8c00c`)，`GET /apis/apprestores.testudo.softcdata.com/v1/watch/apprestores/:name` (`34a12bb3b8c041`)
+  - DisasterInstance：`POST /apis/disasterinstances.testudo.softcdata.com/v1/instances` (`1c01f46f55801000`)，`PUT /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name` (`1c01f4718c001000`)，`GET /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/sync-status` (`1c01f74a5e401000`)，`GET /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/sync-history` (`1c8428770dc01001`)
+  - DisasterDrill：`POST /apis/disasterdrills.testudo.softcdata.com/v1/drills` (`1c0aec0a8f401001`)
+- server 变更入口：
+  - `internal/apis/velero_hooks/hooks.go`：BackupHooks/RestoreHooks 校验、presence/clear patch、敏感参数错误 meta。
+  - `internal/apis/app_backup/v1/types.go` / `handler.go`：create/update/detail/list 支持 `hooks`。
+  - `internal/apis/app_restore/v1/types.go` / `handler.go`：create/update/detail/list 支持 `hooks`。
+  - `internal/apis/disaster_instance/v1/types.go` / `handler.go`：create/update/detail/list 支持 `veleroHooks`，sync-status/sync-history 回显 `backupHookStatus` / `restoreHookStatus`。
+  - `internal/apis/disaster_drill/v1/types.go` / `handler.go`：create/detail/list/watch 回显演练级 `veleroHooks.dataRestore`，create 拒绝 `veleroHooks.dataBackup`。
+- operator/resource 链路：
+  - `DisasterInstance.spec.veleroHooks.dataBackup` -> DataSync 生成/对齐的 `AppBackup.spec.template.hooks` -> Velero Backup/Schedule。
+  - `DisasterInstance.spec.veleroHooks.dataRestore` -> DataSync 生成的 `AppRestore.spec.template.hooks` -> Velero Restore。
+  - `DisasterDrill.spec.veleroHooks.dataRestore` -> `DisasterOperation.spec.drillConfig.veleroHooks` -> drill data restore AppRestore template.hooks；Drill 不创建数据备份，`dataBackup` 被 server 拒绝。
+  - `SyncHistoryRecord.backupHookStatus` / `restoreHookStatus` 由 operator 从 AppBackup/AppRestore Velero hookStatus 复制，server DTO 稳定回显。
+  - Velero Restore `PartiallyFailed` -> operator `AppRestore.status.status=PartiallyFailed` -> server AppRestore list/detail/watch DTO `status.phase=PartiallyFailed`；该状态为非成功终态，不能再映射为 `Succeeded`。
+- 字段契约：
+  - AppBackup/AppRestore `hooks`：create 写入；update 未出现保持原值，传对象整体替换，传 null 或 `{}` 清空。
+  - DisasterInstance `veleroHooks`：顶层未出现保持原值，传 null 或 `{}` 清空全部；`dataBackup`/`dataRestore` 子字段分别按 presence 处理。
+  - DisasterDrill `veleroHooks`：仅允许 `dataRestore`；请求出现 `dataBackup` 返回 `400 code=1000`。
+- 校验与错误：
+  - includedResources 为空或包含 pods；exec command 必须非空；onError 仅允许 Fail/Continue。
+  - timeout 上限：Backup exec `timeout<=10m`，Restore exec `execTimeout<=10m`，Restore exec `waitTimeout<=30m`，Restore init `timeout<=30m`。
+  - 明显敏感明文参数硬拒绝，错误 meta 包含 `errorCode=VeleroHookSensitiveParameter` 和 `fieldPath`；敏感值应通过 Secret env、Secret volume、valueFrom 或 envFrom 传入。
+- OpenAPI 状态：已在 `openspec/specs/disaster-server-openapi.yaml` 新增 `VeleroBackupHooks`、`VeleroRestoreHooks`、`DisasterVeleroHooks`、`DisasterDrillVeleroHooks`、`VeleroHookStatus`、`SyncHistoryHookStatusDTO` 以及 AppBackup/AppRestore request/response schema，并更新 DisasterInstance/DisasterDrill 相关说明；AppRestore list/detail/watch 已声明 `status.phase=PartiallyFailed` 为非成功终态，server 不做成功映射。
+
+## DisasterInstance bulkModifierActions rewriteImage 动态镜像重写
+
+- RunAPI 状态：已通过 Apipost MCP 回读 `POST /apis/disasterinstances.testudo.softcdata.com/v1/instances` Target ID `1c01f46f55801000` 与 `PUT /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name` Target ID `1c01f4718c001000`；由于两个目标 description 历史内容很长且工具回读被截断，本次没有调用 `update_target` 覆盖说明，避免丢失原有长说明；已为两个目标各新增当前 `rewriteImage` 成功示例和缺少 `imageRewrite.sourcePrefix` 的 `400 ModifierRuleRejected` 示例。
+- server 路由：`internal/apis/disaster_instance/v1/router.go`，`POST /apis/disasterinstances.testudo.softcdata.com/v1/instances` 与 `PUT /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name`
+- server handler：`internal/apis/disaster_instance/v1/handler.go`，`h.createInstance` / `h.updateInstance`
+- 请求链路：`BindJSON` -> `RestorePolicyRequest.ToCRD` 解析 `bulkModifierActions` 或 `bulkModifierActionsText` -> `prepareRestorePolicyForPersist` -> `normalizeBulkModifierActions` 校验 `action=rewriteImage`、`imageRewrite.sourcePrefix`、`imageRewrite.targetPrefix`、`unmatchedPolicy=Keep|Fail`、`digestPolicy=Preserve` -> 仅对 `replaceExactValue/removeKey` 等静态 action 构建 `modifierRuleSnapshot` -> 写入 `DisasterInstance.spec.restorePolicy.bulkModifierActions`
+- operator/resource 链路：`rewriteImage` 不在 server 提交期展开长期快照；operator 在 ResourceSync/Drill 恢复构建阶段读取源集群当前 workload/Pod spec 镜像，按 `sourcePrefix -> targetPrefix` 动态编译为现有 `reversible pair` 规则，并继续跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**`。
+- 字段契约：`bulkModifierActions[].action` 支持 `replaceExactValue`、`removeKey`、`rewriteImage`；`replaceExactValue` 仍要求 `sourceValue/targetValue`；`removeKey` 仍要求 `key`；`rewriteImage` 要求 `imageRewrite.sourcePrefix/targetPrefix`，不要求完整镜像 `sourceValue/targetValue`，默认 `unmatchedPolicy=Keep`、`digestPolicy=Preserve`、`directionPolicy=Auto`。
+- 快照语义：纯 `rewriteImage` 场景 `modifierRuleSnapshot` 和 `modifierRuleSnapshotHash` 为空；混合静态 action 与 `rewriteImage` 时仅静态 action 生成快照，`rewriteImage` 原始 DSL 保留在 `bulkModifierActions` 和 `bulkModifierActionsText` 中。
+- OpenAPI 状态：已更新 `openspec/specs/disaster-server-openapi.yaml`，新增 `DisasterInstanceBulkModifierAction`、`DisasterInstanceDynamicImageRewrite`、`DisasterInstanceBulkModifierActionType` 等 schema，并更新创建/更新接口 restorePolicy 与 `modifierRuleSnapshot` 说明。
+- 主要错误点：缺少 `imageRewrite`、缺少 `imageRewrite.sourcePrefix`、缺少 `imageRewrite.targetPrefix`、非法 `unmatchedPolicy`、非法 `digestPolicy` 均返回 `400 code=1000` 且 message 包含 `ModifierRuleRejected`；不再返回 `unsupported action=rewriteImage`。

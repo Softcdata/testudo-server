@@ -27,7 +27,7 @@
 
 ## 示例：清理 PVC VolumeName
 
-在跨集群恢复时，PVC 中记录的 `volumeName` 指向源集群的 PV，这在目标集群中通常是无效的。我们需要移除它，让 StorageClass 动态制备新的 PV。
+在跨集群恢复时，PVC 中记录的 `volumeName` 指向源集群的 PV，这在目标集群中通常是无效的。我们需要清空它，让 StorageClass 动态制备新的 PV。这里必须使用幂等 `add` 空值，不能使用 `remove`，否则当备份中的 PVC 不包含该字段时 JSON Patch 会失败。
 
 ```go
 func CleanVolume() dapisv1.ResourceModifierRule {
@@ -37,8 +37,9 @@ func CleanVolume() dapisv1.ResourceModifierRule {
         },
         Patches: []dapisv1.JSONPatch{
             {
-                Operation: "remove",            // 移除操作
-                Path:      "/spec/volumeName",  // 移除 volumeName 字段
+                Operation: "add",               // 幂等清空
+                Path:      "/spec/volumeName",  // 清空 volumeName 字段
+                Value:     "",
             },
         },
     }

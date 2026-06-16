@@ -1,7 +1,10 @@
 package appbackup
 
 import (
+	"encoding/json"
+
 	dapisv1 "github.com/softcdata/testudo-operator/pkg/apis/disaster/v1"
+	velerohooks "github.com/softcdata/testudo-server/internal/apis/velero_hooks"
 	"github.com/softcdata/testudo-server/internal/common"
 	velerov1 "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,17 +42,17 @@ type AppBackupSpecDTO struct {
 	VolumeSnapshotLocations  []string              `json:"volumeSnapshotLocations,omitempty"`  // 卷快照位置列表
 	ParallelFilesUpload      int                   `json:"parallelFilesUpload,omitempty"`      // 并行文件上传数量
 
-	IncludeClusterResources          *bool                `json:"includeClusterResources,omitempty"`          // 包含集群资源
-	Hooks                            velerov1.BackupHooks `json:"hooks,omitempty"`                            // 备份钩子
-	OrderedResources                 map[string]string    `json:"orderedResources,omitempty"`                 // 资源备份顺序
-	CSISnapshotTimeout               metav1.Duration      `json:"csiSnapshotTimeout,omitempty"`               // CSI快照超时时间
-	ItemOperationTimeout             metav1.Duration      `json:"itemOperationTimeout,omitempty"`             // 项目操作超时时间
-	SnapshotMoveData                 *bool                `json:"snapshotMoveData,omitempty"`                 // 快照移动数据
-	Datamover                        string               `json:"datamover,omitempty"`                        // 数据移动器
-	IncludedNamespaceScopedResources []string             `json:"includedNamespaceScopedResources,omitempty"` // 包含命名空间范围资源
-	ExcludedNamespaceScopedResources []string             `json:"excludedNamespaceScopedResources,omitempty"` // 排除命名空间范围资源
-	IncludedClusterScopedResources   []string             `json:"includedClusterScopedResources,omitempty"`   // 包含集群范围资源
-	ExcludedClusterScopedResources   []string             `json:"excludedClusterScopedResources,omitempty"`   // 排除集群范围资源
+	IncludeClusterResources          *bool                 `json:"includeClusterResources,omitempty"`          // 包含集群资源
+	Hooks                            *velerov1.BackupHooks `json:"hooks,omitempty"`                            // 备份钩子
+	OrderedResources                 map[string]string     `json:"orderedResources,omitempty"`                 // 资源备份顺序
+	CSISnapshotTimeout               metav1.Duration       `json:"csiSnapshotTimeout,omitempty"`               // CSI快照超时时间
+	ItemOperationTimeout             metav1.Duration       `json:"itemOperationTimeout,omitempty"`             // 项目操作超时时间
+	SnapshotMoveData                 *bool                 `json:"snapshotMoveData,omitempty"`                 // 快照移动数据
+	Datamover                        string                `json:"datamover,omitempty"`                        // 数据移动器
+	IncludedNamespaceScopedResources []string              `json:"includedNamespaceScopedResources,omitempty"` // 包含命名空间范围资源
+	ExcludedNamespaceScopedResources []string              `json:"excludedNamespaceScopedResources,omitempty"` // 排除命名空间范围资源
+	IncludedClusterScopedResources   []string              `json:"includedClusterScopedResources,omitempty"`   // 包含集群范围资源
+	ExcludedClusterScopedResources   []string              `json:"excludedClusterScopedResources,omitempty"`   // 排除集群范围资源
 }
 
 type AppBackupStatusDTO struct {
@@ -148,7 +151,7 @@ func ConvertSpecToDTO(spec dapisv1.AppBackupSpec) AppBackupSpecDTO {
 		ExcludedNamespaceScopedResources: spec.Template.ExcludedNamespaceScopedResources,
 		IncludedClusterScopedResources:   spec.Template.IncludedClusterScopedResources,
 		ExcludedClusterScopedResources:   spec.Template.ExcludedClusterScopedResources,
-		// Hooks:                    spec.Template.Hooks,
+		Hooks:                            backupHooksDTO(spec.Template.Hooks),
 		// OrderedResources:         spec.Template.OrderedResources,
 		// CSISnapshotTimeout:       spec.Template.CSISnapshotTimeout,
 		// ItemOperationTimeout:     spec.Template.ItemOperationTimeout,
@@ -275,8 +278,8 @@ type CreateAppBackupRequest struct {
 	VolumeSnapshotLocations  []string              `json:"volumeSnapshotLocations,omitempty"`  // 卷快照位置列表
 	// ParallelFilesUpload      int                   `json:"parallelFilesUpload,omitempty"`      // 并行文件上传数量
 
-	IncludeClusterResources *bool `json:"includeClusterResources,omitempty"` // 包含集群资源
-	// Hooks                   velerov1.BackupHooks `json:"hooks,omitempty"`                   // 备份钩子
+	IncludeClusterResources *bool                 `json:"includeClusterResources,omitempty"` // 包含集群资源
+	Hooks                   *velerov1.BackupHooks `json:"hooks,omitempty"`                   // 备份钩子
 	// OrderedResources        map[string]string    `json:"orderedResources,omitempty"`        // 资源备份顺序
 	// CSISnapshotTimeout      metav1.Duration      `json:"csiSnapshotTimeout,omitempty"`      // CSI快照超时时间
 	// ItemOperationTimeout    metav1.Duration      `json:"itemOperationTimeout,omitempty"`    // 项目操作超时时间
@@ -328,7 +331,7 @@ func (r *CreateAppBackupRequest) ToCRD() dapisv1.AppBackupSpec {
 			DefaultVolumesToFsBackup: r.DefaultVolumesToFsBackup,
 			// VolumeSnapshotLocations:  r.VolumeSnapshotLocations,
 			IncludeClusterResources: r.IncludeClusterResources,
-			// Hooks:                    r.Hooks,
+			Hooks:                   backupHooksValue(r.Hooks),
 			// OrderedResources:         r.OrderedResources,
 			// CSISnapshotTimeout:       r.CSISnapshotTimeout,
 			// ItemOperationTimeout:     r.ItemOperationTimeout,
@@ -368,8 +371,8 @@ type UpdateAppBackupRequest struct {
 	// VolumeSnapshotLocations  []string              `json:"volumeSnapshotLocations,omitempty"`  // 卷快照位置列表
 	// ParallelFilesUpload      *int                  `json:"parallelFilesUpload,omitempty"`      // 并行文件上传数量
 
-	IncludeClusterResources *bool `json:"includeClusterResources,omitempty"` // 包含集群资源
-	// Hooks                   *velerov1.BackupHooks `json:"hooks,omitempty"`                   // 备份钩子
+	IncludeClusterResources *bool                 `json:"includeClusterResources,omitempty"` // 包含集群资源
+	Hooks                   *velerov1.BackupHooks `json:"hooks,omitempty"`                   // 备份钩子
 	// OrderedResources        map[string]string     `json:"orderedResources,omitempty"`        // 资源备份顺序
 	// CSISnapshotTimeout      *metav1.Duration      `json:"csiSnapshotTimeout,omitempty"`      // CSI快照超时时间
 	// ItemOperationTimeout    *metav1.Duration      `json:"itemOperationTimeout,omitempty"`    // 项目操作超时时间
@@ -379,6 +382,30 @@ type UpdateAppBackupRequest struct {
 	ExcludedNamespaceScopedResources []string `json:"excludedNamespaceScopedResources,omitempty"` // 排除命名空间范围资源
 	IncludedClusterScopedResources   []string `json:"includedClusterScopedResources,omitempty"`   // 包含集群范围资源
 	ExcludedClusterScopedResources   []string `json:"excludedClusterScopedResources,omitempty"`   // 排除集群范围资源
+
+	hooksSet   bool
+	hooksClear bool
+}
+
+func (r *UpdateAppBackupRequest) UnmarshalJSON(data []byte) error {
+	type alias UpdateAppBackupRequest
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*r = UpdateAppBackupRequest(decoded)
+	if hooksRaw, ok := raw["hooks"]; ok {
+		r.hooksSet = true
+		if velerohooks.IsNullOrEmptyObject(hooksRaw) {
+			r.Hooks = nil
+			r.hooksClear = true
+		}
+	}
+	return nil
 }
 
 func (r *UpdateAppBackupRequest) hasScopedResourceFilters() bool {
@@ -471,9 +498,13 @@ func (r *UpdateAppBackupRequest) MergeToCRD(spec *dapisv1.AppBackupSpec) {
 	if len(r.ExcludedClusterScopedResources) > 0 {
 		spec.Template.ExcludedClusterScopedResources = r.ExcludedClusterScopedResources
 	}
-	// if r.Hooks != nil {
-	// 	spec.Template.Hooks = *r.Hooks
-	// }
+	if r.hooksSet {
+		if r.hooksClear || r.Hooks == nil {
+			spec.Template.Hooks = velerov1.BackupHooks{}
+		} else {
+			spec.Template.Hooks = *r.Hooks
+		}
+	}
 	// if len(r.OrderedResources) > 0 {
 	// 	spec.Template.OrderedResources = r.OrderedResources
 	// }
@@ -489,6 +520,20 @@ func (r *UpdateAppBackupRequest) MergeToCRD(spec *dapisv1.AppBackupSpec) {
 	// if r.Datamover != "" {
 	// 	spec.Template.DataMover = r.Datamover
 	// }
+}
+
+func backupHooksValue(hooks *velerov1.BackupHooks) velerov1.BackupHooks {
+	if hooks == nil {
+		return velerov1.BackupHooks{}
+	}
+	return *hooks
+}
+
+func backupHooksDTO(hooks velerov1.BackupHooks) *velerov1.BackupHooks {
+	if len(hooks.Resources) == 0 {
+		return nil
+	}
+	return &hooks
 }
 
 // BackupDownloadResponse 备份下载响应

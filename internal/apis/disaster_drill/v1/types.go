@@ -5,6 +5,7 @@ import (
 
 	dapisv1 "github.com/softcdata/testudo-operator/pkg/apis/disaster/v1"
 	instancev1 "github.com/softcdata/testudo-server/internal/apis/disaster_instance/v1"
+	velerohooks "github.com/softcdata/testudo-server/internal/apis/velero_hooks"
 	"github.com/softcdata/testudo-server/internal/common"
 )
 
@@ -27,6 +28,7 @@ type DisasterDrillDTO struct {
 	WaitUntilReady   bool                         `json:"waitUntilReady"`
 	Cleanup          bool                         `json:"cleanup"`
 	RestorePolicy    *instancev1.RestorePolicyDTO `json:"restorePolicy,omitempty"`
+	VeleroHooks      *dapisv1.DisasterVeleroHooks `json:"veleroHooks,omitempty"`
 
 	// 状态（不扁平化，统一走 status.state / status.reason / status.message）
 	Status DisasterDrillStatusDTO `json:"status"`
@@ -114,6 +116,9 @@ type CreateDrillRequest struct {
 	// 可选：演练级 restorePolicy 覆盖。
 	// 当前主要用于资源定制化修改与 bulk 操作，未提供时默认继承实例配置。
 	RestorePolicy *instancev1.RestorePolicyRequest `json:"restorePolicy,omitempty"`
+
+	// 可选：演练级 Velero Hook 覆盖。Drill 仅允许 dataRestore，禁止 dataBackup。
+	VeleroHooks *velerohooks.DisasterVeleroHooksRequest `json:"veleroHooks,omitempty"`
 }
 
 // ProtectedNamespacesDTO 演练前置命名空间查询返回
@@ -149,6 +154,7 @@ func ConvertToDisasterDrillDTO(item *dapisv1.DisasterDrill) DisasterDrillDTO {
 		WaitUntilReady:    item.Spec.WaitUntilReady,
 		Cleanup:           item.Spec.CleanUp,
 		RestorePolicy:     instancev1.ConvertRestorePolicyDTO(item.Spec.RestorePolicy),
+		VeleroHooks:       item.Spec.VeleroHooks,
 		Status: DisasterDrillStatusDTO{
 			State:          string(item.Status.State),
 			Reason:         item.Status.Reason,
@@ -220,6 +226,7 @@ func (r *CreateDrillRequest) ToCRD(restorePolicy *dapisv1.RestorePolicy) dapisv1
 		SkipValidation:   r.SkipValidation,
 		WaitUntilReady:   r.WaitUntilReady,
 		RestorePolicy:    restorePolicy,
+		VeleroHooks:      r.VeleroHooks.ToCRD(),
 		Confirmed:        false, // 创建时不自动确认
 	}
 }

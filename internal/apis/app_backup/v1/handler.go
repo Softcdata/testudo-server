@@ -15,6 +15,7 @@ import (
 	dapisv1 "github.com/softcdata/testudo-operator/pkg/apis/disaster/v1"
 	listers "github.com/softcdata/testudo-operator/pkg/listers/disaster/v1"
 	metadata "github.com/softcdata/testudo-operator/pkg/metadata"
+	velerohooks "github.com/softcdata/testudo-server/internal/apis/velero_hooks"
 	"github.com/softcdata/testudo-server/internal/common"
 	"github.com/softcdata/testudo-server/internal/i18n"
 	"github.com/softcdata/testudo-server/internal/kube"
@@ -298,6 +299,10 @@ func (h *AppBackupHandler) createAppBackup(c context.Context, ctx *app.RequestCo
 		transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), nil)
 		return
 	}
+	if err := velerohooks.ValidateBackupHooks(req.Hooks, "hooks"); err != nil {
+		transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), velerohooks.ErrorMeta(err))
+		return
+	}
 
 	// Validate dependencies before creating AppBackup
 	// 1. Validate Cluster is ready
@@ -355,6 +360,10 @@ func (h *AppBackupHandler) updateAppBackup(c context.Context, ctx *app.RequestCo
 	}
 	if err := validateUpdateAppBackupResourceFilters(&req); err != nil {
 		transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), nil)
+		return
+	}
+	if err := velerohooks.ValidateBackupHooks(req.Hooks, "hooks"); err != nil {
+		transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), velerohooks.ErrorMeta(err))
 		return
 	}
 

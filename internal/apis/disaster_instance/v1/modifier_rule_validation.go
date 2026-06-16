@@ -155,16 +155,25 @@ func validateModifierPatchPath(path string) error {
 	if err := validateJSONPointer(path); err != nil {
 		return err
 	}
-	if path == "/status" || strings.HasPrefix(path, "/status/") {
-		return fmt.Errorf("patch path %s is forbidden", path)
-	}
-	if path == "/metadata/finalizers" || strings.HasPrefix(path, "/metadata/finalizers/") {
-		return fmt.Errorf("patch path %s is forbidden", path)
-	}
-	if path == "/metadata/ownerReferences" || strings.HasPrefix(path, "/metadata/ownerReferences/") {
+	if modifierPatchPathForbidden(path) {
 		return fmt.Errorf("patch path %s is forbidden", path)
 	}
 	return nil
+}
+
+func modifierPatchPathAllowed(path string) bool {
+	path = strings.TrimSpace(path)
+	return path != "" && !modifierPatchPathForbidden(path)
+}
+
+func modifierPatchPathForbidden(path string) bool {
+	path = strings.TrimSpace(path)
+	return path == "/status" ||
+		strings.HasPrefix(path, "/status/") ||
+		path == "/metadata/finalizers" ||
+		strings.HasPrefix(path, "/metadata/finalizers/") ||
+		path == "/metadata/ownerReferences" ||
+		strings.HasPrefix(path, "/metadata/ownerReferences/")
 }
 
 func validateJSONPointer(path string) error {

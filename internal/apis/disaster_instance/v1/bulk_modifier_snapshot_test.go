@@ -79,6 +79,66 @@ func TestNormalizeBulkModifierActions_RejectsDataSyncApplyTo(t *testing.T) {
 	}
 }
 
+func TestNormalizeBulkModifierActions_RewriteImageDefaultsAndValidation(t *testing.T) {
+	t.Parallel()
+
+	got, err := normalizeBulkModifierActions([]dapisv1.BulkModifierAction{{
+		ID:      "rewrite-primary-registry",
+		Action:  dapisv1.BulkModifierActionRewriteImage,
+		ApplyTo: []dapisv1.RestoreModifierApplyTarget{dapisv1.RestoreModifierApplyResourceSync, dapisv1.RestoreModifierApplyDrill},
+		ImageRewrite: &dapisv1.DynamicImageRewriteConfig{
+			SourcePrefix: " 10.11.11.1:5000/ ",
+			TargetPrefix: " registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/ ",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("expected rewriteImage normalization success, got %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 normalized action, got %d", len(got))
+	}
+	action := got[0]
+	if action.Action != dapisv1.BulkModifierActionRewriteImage {
+		t.Fatalf("expected rewriteImage action, got %s", action.Action)
+	}
+	if action.DirectionPolicy != dapisv1.RestoreModifierDirectionPolicyAuto {
+		t.Fatalf("expected directionPolicy=Auto, got %s", action.DirectionPolicy)
+	}
+	if action.ImageRewrite == nil {
+		t.Fatalf("expected imageRewrite config")
+	}
+	if action.ImageRewrite.SourcePrefix != "10.11.11.1:5000/" {
+		t.Fatalf("unexpected sourcePrefix: %s", action.ImageRewrite.SourcePrefix)
+	}
+	if action.ImageRewrite.TargetPrefix != "registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/" {
+		t.Fatalf("unexpected targetPrefix: %s", action.ImageRewrite.TargetPrefix)
+	}
+	if action.ImageRewrite.UnmatchedPolicy != dapisv1.ImageRewriteUnmatchedPolicyKeep {
+		t.Fatalf("expected default unmatchedPolicy=Keep, got %s", action.ImageRewrite.UnmatchedPolicy)
+	}
+	if action.ImageRewrite.DigestPolicy != dapisv1.ImageRewriteDigestPolicyPreserve {
+		t.Fatalf("expected default digestPolicy=Preserve, got %s", action.ImageRewrite.DigestPolicy)
+	}
+}
+
+func TestNormalizeBulkModifierActions_RewriteImageRequiresPrefixes(t *testing.T) {
+	t.Parallel()
+
+	_, err := normalizeBulkModifierActions([]dapisv1.BulkModifierAction{{
+		ID:     "rewrite-primary-registry",
+		Action: dapisv1.BulkModifierActionRewriteImage,
+		ImageRewrite: &dapisv1.DynamicImageRewriteConfig{
+			TargetPrefix: "registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/",
+		},
+	}})
+	if err == nil {
+		t.Fatalf("expected missing sourcePrefix rejection, got nil")
+	}
+	if !strings.Contains(err.Error(), "imageRewrite.sourcePrefix is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestBuildBulkModifierSnapshotFromResources_ReplaceExactValueMergesManualRulesAndStableHash(t *testing.T) {
 	t.Parallel()
 
@@ -171,6 +231,94 @@ func TestBuildBulkModifierSnapshotFromResources_ReplaceExactValueMergesManualRul
 	}
 }
 
+func TestBuildBulkModifierSnapshotFromResources_RewriteImageDoesNotGenerateStaticSnapshot(t *testing.T) {
+	t.Parallel()
+
+	spec := &dapisv1.DisasterInstanceSpec{
+		RestorePolicy: &dapisv1.RestorePolicy{
+			BulkModifierActions: []dapisv1.BulkModifierAction{{
+				ID:      "rewrite-primary-registry",
+				Action:  dapisv1.BulkModifierActionRewriteImage,
+				Enabled: boolPtr(true),
+				ImageRewrite: &dapisv1.DynamicImageRewriteConfig{
+					SourcePrefix:    "10.11.11.1:5000/",
+					TargetPrefix:    "registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/",
+					UnmatchedPolicy: dapisv1.ImageRewriteUnmatchedPolicyKeep,
+					DigestPolicy:    dapisv1.ImageRewriteDigestPolicyPreserve,
+				},
+			}},
+		},
+	}
+	actions, err := normalizeBulkModifierActions(spec.RestorePolicy.BulkModifierActions)
+	if err != nil {
+		t.Fatalf("expected normalization success, got %v", err)
+	}
+
+	got, err := buildBulkModifierSnapshotFromResources(spec, actions, nil)
+	if err != nil {
+		t.Fatalf("expected rewriteImage to skip static snapshot build, got %v", err)
+	}
+	if len(got.Actions) != 1 || got.Actions[0].Action != dapisv1.BulkModifierActionRewriteImage {
+		t.Fatalf("expected rewriteImage action to be preserved, got %#v", got.Actions)
+	}
+	if len(got.ModifierRuleSnapshot) != 0 {
+		t.Fatalf("expected no static modifierRuleSnapshot for rewriteImage, got %d", len(got.ModifierRuleSnapshot))
+	}
+	if got.ModifierRuleSnapshotHash != "" {
+		t.Fatalf("expected empty snapshot hash for rewriteImage, got %s", got.ModifierRuleSnapshotHash)
+	}
+}
+
+func TestBuildBulkModifierSnapshotFromResources_MixedRewriteImageAndStaticOnlyExpandsStatic(t *testing.T) {
+	t.Parallel()
+
+	spec := &dapisv1.DisasterInstanceSpec{
+		RestorePolicy: &dapisv1.RestorePolicy{},
+	}
+	actions, err := normalizeBulkModifierActions([]dapisv1.BulkModifierAction{
+		{
+			ID:     "rewrite-primary-registry",
+			Action: dapisv1.BulkModifierActionRewriteImage,
+			ImageRewrite: &dapisv1.DynamicImageRewriteConfig{
+				SourcePrefix: "10.11.11.1:5000/",
+				TargetPrefix: "registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/",
+			},
+		},
+		{
+			ID:          "replace-ip",
+			Action:      dapisv1.BulkModifierActionReplaceExactValue,
+			SourceValue: "10.10.0.12",
+			TargetValue: "10.20.0.12",
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected normalization success, got %v", err)
+	}
+
+	got, err := buildBulkModifierSnapshotFromResources(spec, actions, []bulkScannedResource{{
+		GroupResource: "configmaps",
+		Namespace:     "demo-ns",
+		Name:          "demo",
+		Object: map[string]any{
+			"data": map[string]any{
+				"ip": "10.10.0.12",
+			},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("expected mixed snapshot build success, got %v", err)
+	}
+	if len(got.Actions) != 2 {
+		t.Fatalf("expected both actions to be preserved, got %d", len(got.Actions))
+	}
+	if len(got.ModifierRuleSnapshot) != 1 {
+		t.Fatalf("expected only static action to generate one rule, got %d", len(got.ModifierRuleSnapshot))
+	}
+	if got.ModifierRuleSnapshot[0].ID != "bulk-replace-ip-0001" {
+		t.Fatalf("unexpected generated rule ID: %s", got.ModifierRuleSnapshot[0].ID)
+	}
+}
+
 func TestBuildBulkModifierSnapshotFromResources_RemoveKeySetsForwardOnlyPatch(t *testing.T) {
 	t.Parallel()
 
@@ -213,6 +361,197 @@ func TestBuildBulkModifierSnapshotFromResources_RemoveKeySetsForwardOnlyPatch(t 
 	}
 	if patch := rule.VeleroRule.Patches[0]; patch.Operation != "remove" || patch.Path != "/metadata/annotations/site-role" {
 		t.Fatalf("unexpected removeKey patch: %#v", patch)
+	}
+}
+
+func TestBuildBulkModifierSnapshotFromResources_ReplaceExactValueSkipsForbiddenStatusPath(t *testing.T) {
+	t.Parallel()
+
+	const sourceImage = "10.11.11.1:5000/blueking/bcs-bkcmdb-synchronizer:v1.30.0"
+	const targetImage = "registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/blueking/bcs-bkcmdb-synchronizer:v1.30.0"
+
+	spec := &dapisv1.DisasterInstanceSpec{
+		RestorePolicy: &dapisv1.RestorePolicy{},
+	}
+	actions, err := normalizeBulkModifierActions([]dapisv1.BulkModifierAction{{
+		ID:          "replace-bkcmdb-synchronizer-image",
+		Action:      dapisv1.BulkModifierActionReplaceExactValue,
+		SourceValue: sourceImage,
+		TargetValue: targetImage,
+		ApplyTo: []dapisv1.RestoreModifierApplyTarget{
+			dapisv1.RestoreModifierApplyResourceSync,
+			dapisv1.RestoreModifierApplyDrill,
+		},
+	}})
+	if err != nil {
+		t.Fatalf("expected normalization success, got %v", err)
+	}
+
+	got, err := buildBulkModifierSnapshotFromResources(spec, actions, []bulkScannedResource{
+		{
+			GroupResource: "deployments.apps",
+			Namespace:     "demo-ns",
+			Name:          "bkcmdb",
+			Object: map[string]any{
+				"spec": map[string]any{
+					"template": map[string]any{
+						"spec": map[string]any{
+							"containers": []any{
+								map[string]any{
+									"name":  "synchronizer",
+									"image": sourceImage,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			GroupResource: "pods",
+			Namespace:     "demo-ns",
+			Name:          "bkcmdb-pod",
+			Object: map[string]any{
+				"spec": map[string]any{
+					"containers": []any{
+						map[string]any{
+							"name":  "synchronizer",
+							"image": sourceImage,
+						},
+					},
+				},
+				"status": map[string]any{
+					"containerStatuses": []any{
+						map[string]any{
+							"name":  "synchronizer",
+							"image": sourceImage,
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected snapshot build success, got %v", err)
+	}
+	if len(got.ModifierRuleSnapshot) != 2 {
+		t.Fatalf("expected 2 snapshot rules for deployment spec image and pod spec image, got %d", len(got.ModifierRuleSnapshot))
+	}
+
+	paths := make(map[string]struct{}, len(got.ModifierRuleSnapshot))
+	for _, rule := range got.ModifierRuleSnapshot {
+		if rule.Pair == nil {
+			t.Fatalf("expected reversible pair rule, got %#v", rule)
+		}
+		if strings.HasPrefix(rule.Pair.Path, "/status/") || rule.Pair.Path == "/status" {
+			t.Fatalf("generated forbidden status path: %s", rule.Pair.Path)
+		}
+		paths[rule.Conditions.GroupResource+"|"+rule.Pair.Path] = struct{}{}
+	}
+	expectedPaths := []string{
+		"deployments.apps|/spec/template/spec/containers/0/image",
+		"pods|/spec/containers/0/image",
+	}
+	for _, path := range expectedPaths {
+		if _, ok := paths[path]; !ok {
+			t.Fatalf("missing expected generated path %s; got %v", path, paths)
+		}
+	}
+	if _, ok := paths["pods|/status/containerStatuses/0/image"]; ok {
+		t.Fatalf("status container image path must be skipped")
+	}
+}
+
+func TestBuildBulkModifierSnapshotFromResources_ReplaceExactValueOnlyForbiddenPathIsZeroMatch(t *testing.T) {
+	t.Parallel()
+
+	spec := &dapisv1.DisasterInstanceSpec{
+		RestorePolicy: &dapisv1.RestorePolicy{},
+	}
+	actions, err := normalizeBulkModifierActions([]dapisv1.BulkModifierAction{{
+		ID:          "replace-status-image",
+		Action:      dapisv1.BulkModifierActionReplaceExactValue,
+		SourceValue: "registry.local/app:v1",
+		TargetValue: "registry.dr/app:v1",
+	}})
+	if err != nil {
+		t.Fatalf("expected normalization success, got %v", err)
+	}
+
+	_, err = buildBulkModifierSnapshotFromResources(spec, actions, []bulkScannedResource{{
+		GroupResource: "pods",
+		Namespace:     "demo-ns",
+		Name:          "only-status",
+		Object: map[string]any{
+			"status": map[string]any{
+				"containerStatuses": []any{
+					map[string]any{
+						"image": "registry.local/app:v1",
+					},
+				},
+			},
+		},
+	}})
+	if err == nil {
+		t.Fatalf("expected zero-match rejection after filtering forbidden status path")
+	}
+	if !strings.Contains(err.Error(), "matched zero resources") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildBulkModifierSnapshotFromResources_RemoveKeySkipsForbiddenPaths(t *testing.T) {
+	t.Parallel()
+
+	spec := &dapisv1.DisasterInstanceSpec{
+		RestorePolicy: &dapisv1.RestorePolicy{},
+	}
+	actions, err := normalizeBulkModifierActions([]dapisv1.BulkModifierAction{{
+		ID:     "drop-site-role",
+		Action: dapisv1.BulkModifierActionRemoveKey,
+		Key:    "site-role",
+	}})
+	if err != nil {
+		t.Fatalf("expected normalization success, got %v", err)
+	}
+
+	got, err := buildBulkModifierSnapshotFromResources(spec, actions, []bulkScannedResource{{
+		GroupResource: "configmaps",
+		Namespace:     "demo-ns",
+		Name:          "demo",
+		Object: map[string]any{
+			"metadata": map[string]any{
+				"annotations": map[string]any{
+					"site-role": "primary",
+				},
+				"finalizers": []any{
+					map[string]any{
+						"site-role": "forbidden-finalizer-child",
+					},
+				},
+				"ownerReferences": []any{
+					map[string]any{
+						"site-role": "forbidden-owner-child",
+					},
+				},
+			},
+			"status": map[string]any{
+				"site-role": "forbidden-status-child",
+			},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("expected snapshot build success, got %v", err)
+	}
+	if len(got.ModifierRuleSnapshot) != 1 {
+		t.Fatalf("expected only one allowed removeKey rule, got %d", len(got.ModifierRuleSnapshot))
+	}
+	rule := got.ModifierRuleSnapshot[0]
+	if rule.VeleroRule == nil || len(rule.VeleroRule.Patches) != 1 {
+		t.Fatalf("expected one veleroNative patch, got %#v", rule.VeleroRule)
+	}
+	if gotPath := rule.VeleroRule.Patches[0].Path; gotPath != "/metadata/annotations/site-role" {
+		t.Fatalf("expected only annotation key to be removed, got %s", gotPath)
 	}
 }
 

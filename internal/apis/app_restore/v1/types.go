@@ -1,8 +1,11 @@
 package apprestore
 
 import (
+	"encoding/json"
+
 	dapisv1 "github.com/softcdata/testudo-operator/pkg/apis/disaster/v1"
 	metadata "github.com/softcdata/testudo-operator/pkg/metadata"
+	velerohooks "github.com/softcdata/testudo-server/internal/apis/velero_hooks"
 	"github.com/softcdata/testudo-server/internal/common"
 	velerov1 "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,6 +45,8 @@ type CreateAppRestoreRequest struct {
 	// UploaderConfig parameters
 	WriteSparseFiles      *bool `json:"writeSparseFiles,omitempty"`
 	ParallelFilesDownload *int  `json:"parallelFilesDownload,omitempty"`
+
+	Hooks *velerov1.RestoreHooks `json:"hooks,omitempty"`
 }
 
 // ValidateRestorePreflightRequest defines the request body for restore preflight validation.
@@ -70,6 +75,7 @@ func (r *CreateAppRestoreRequest) ToCRD() dapisv1.AppRestoreSpec {
 			PreserveNodePorts:       r.PreserveNodePorts,
 			IncludeClusterResources: r.IncludeClusterResources,
 			ExistingResourcePolicy:  velerov1.PolicyType(r.ExistingResourcePolicy),
+			Hooks:                   restoreHooksValue(r.Hooks),
 			UploaderConfig: &velerov1.UploaderConfigForRestore{
 				WriteSparseFiles: r.WriteSparseFiles,
 				ParallelFilesDownload: func() int {
@@ -125,6 +131,32 @@ type UpdateAppRestoreRequest struct {
 	// UploaderConfig parameters
 	WriteSparseFiles      *bool `json:"writeSparseFiles,omitempty"`
 	ParallelFilesDownload *int  `json:"parallelFilesDownload,omitempty"`
+
+	Hooks *velerov1.RestoreHooks `json:"hooks,omitempty"`
+
+	hooksSet   bool
+	hooksClear bool
+}
+
+func (r *UpdateAppRestoreRequest) UnmarshalJSON(data []byte) error {
+	type alias UpdateAppRestoreRequest
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*r = UpdateAppRestoreRequest(decoded)
+	if hooksRaw, ok := raw["hooks"]; ok {
+		r.hooksSet = true
+		if velerohooks.IsNullOrEmptyObject(hooksRaw) {
+			r.Hooks = nil
+			r.hooksClear = true
+		}
+	}
+	return nil
 }
 
 // MergeToCRD updates the existing AppRestoreSpec with fields from the request
@@ -173,6 +205,13 @@ func (r *UpdateAppRestoreRequest) MergeToCRD(spec *dapisv1.AppRestoreSpec) {
 	if r.ExistingResourcePolicy != "" {
 		spec.Template.ExistingResourcePolicy = velerov1.PolicyType(r.ExistingResourcePolicy)
 	}
+	if r.hooksSet {
+		if r.hooksClear || r.Hooks == nil {
+			spec.Template.Hooks = velerov1.RestoreHooks{}
+		} else {
+			spec.Template.Hooks = *r.Hooks
+		}
+	}
 
 	// UploaderConfig update
 	if r.WriteSparseFiles != nil || r.ParallelFilesDownload != nil {
@@ -203,20 +242,21 @@ type AppRestoreDTO struct {
 }
 
 type AppRestoreSpecDTO struct {
-	BackupSource            string                `json:"backupSource"`
-	Cluster                 string                `json:"cluster"`
-	BackupName              string                `json:"backupName"`
-	IncludedNamespaces      []string              `json:"includedNamespaces,omitempty"`
-	ExcludedNamespaces      []string              `json:"excludedNamespaces,omitempty"`
-	IncludedResources       []string              `json:"includedResources,omitempty"`
-	ExcludedResources       []string              `json:"excludedResources,omitempty"`
-	LabelSelector           *metav1.LabelSelector `json:"labelSelector,omitempty"`
-	NamespaceMapping        map[string]string     `json:"namespaceMapping,omitempty"`
-	RestorePVs              *bool                 `json:"restorePVs,omitempty"`
-	PreserveNodePorts       *bool                 `json:"preserveNodePorts,omitempty"`
-	IncludeClusterResources *bool                 `json:"includeClusterResources,omitempty"`
-	ExistingResourcePolicy  string                `json:"existingResourcePolicy,omitempty"`
-	Timeout                 string                `json:"timeout,omitempty"`
+	BackupSource            string                 `json:"backupSource"`
+	Cluster                 string                 `json:"cluster"`
+	BackupName              string                 `json:"backupName"`
+	IncludedNamespaces      []string               `json:"includedNamespaces,omitempty"`
+	ExcludedNamespaces      []string               `json:"excludedNamespaces,omitempty"`
+	IncludedResources       []string               `json:"includedResources,omitempty"`
+	ExcludedResources       []string               `json:"excludedResources,omitempty"`
+	LabelSelector           *metav1.LabelSelector  `json:"labelSelector,omitempty"`
+	NamespaceMapping        map[string]string      `json:"namespaceMapping,omitempty"`
+	RestorePVs              *bool                  `json:"restorePVs,omitempty"`
+	PreserveNodePorts       *bool                  `json:"preserveNodePorts,omitempty"`
+	IncludeClusterResources *bool                  `json:"includeClusterResources,omitempty"`
+	ExistingResourcePolicy  string                 `json:"existingResourcePolicy,omitempty"`
+	Timeout                 string                 `json:"timeout,omitempty"`
+	Hooks                   *velerov1.RestoreHooks `json:"hooks,omitempty"`
 
 	// UploaderConfig
 	WriteSparseFiles      *bool `json:"writeSparseFiles,omitempty"`
@@ -305,6 +345,7 @@ func ConvertSpecToDTO(spec dapisv1.AppRestoreSpec) AppRestoreSpecDTO {
 		PreserveNodePorts:       spec.Template.PreserveNodePorts,
 		IncludeClusterResources: spec.Template.IncludeClusterResources,
 		ExistingResourcePolicy:  string(spec.Template.ExistingResourcePolicy),
+		Hooks:                   restoreHooksDTO(spec.Template.Hooks),
 	}
 	if spec.Template.ItemOperationTimeout.Duration > 0 {
 		dto.Timeout = spec.Template.ItemOperationTimeout.Duration.String()
@@ -344,6 +385,20 @@ func ConvertVeleroRestoreStatusToDTO(status velerov1.RestoreStatus) VeleroRestor
 		RestoreItemOperationsFailed:    status.RestoreItemOperationsFailed,
 		HookStatus:                     status.HookStatus,
 	}
+}
+
+func restoreHooksValue(hooks *velerov1.RestoreHooks) velerov1.RestoreHooks {
+	if hooks == nil {
+		return velerov1.RestoreHooks{}
+	}
+	return *hooks
+}
+
+func restoreHooksDTO(hooks velerov1.RestoreHooks) *velerov1.RestoreHooks {
+	if len(hooks.Resources) == 0 {
+		return nil
+	}
+	return &hooks
 }
 
 func ConvertRestoreActionToDTO(action *dapisv1.RestoreAction) *RestoreActionDTO {

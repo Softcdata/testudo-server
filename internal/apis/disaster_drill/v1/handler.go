@@ -14,6 +14,7 @@ import (
 	dapisv1 "github.com/softcdata/testudo-operator/pkg/apis/disaster/v1"
 	metadata "github.com/softcdata/testudo-operator/pkg/metadata"
 	instancev1 "github.com/softcdata/testudo-server/internal/apis/disaster_instance/v1"
+	velerohooks "github.com/softcdata/testudo-server/internal/apis/velero_hooks"
 	"github.com/softcdata/testudo-server/internal/common"
 	"github.com/softcdata/testudo-server/internal/kube"
 	"github.com/softcdata/testudo-server/internal/transport"
@@ -537,6 +538,20 @@ func (h *DrillHandler) createDrill(c context.Context, ctx *app.RequestContext) {
 	if req.Name != "" && len(req.Name) > 63 {
 		transport.WriteError(ctx, transport.CodeBadRequest, fmt.Sprintf("drill name must be no more than 63 characters, got %d", len(req.Name)), nil)
 		return
+	}
+	if req.VeleroHooks != nil {
+		if req.VeleroHooks.DataBackupSet {
+			err := &velerohooks.ValidationError{
+				FieldPath: "veleroHooks.dataBackup",
+				Message:   "drill veleroHooks.dataBackup is not supported",
+			}
+			transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), velerohooks.ErrorMeta(err))
+			return
+		}
+		if err := velerohooks.ValidateRestoreHooks(req.VeleroHooks.DataRestore, "veleroHooks.dataRestore"); err != nil {
+			transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), velerohooks.ErrorMeta(err))
+			return
+		}
 	}
 
 	// 命名空间

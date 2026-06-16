@@ -13,8 +13,11 @@ func CleanVolume() dapisv1.ResourceModifierRule {
 		},
 		Patches: []dapisv1.JSONPatch{
 			{
-				Operation: "remove",
+				// Use add with an empty value instead of remove. RFC6902 remove fails when
+				// Velero restores a PVC that no longer has spec.volumeName in the backup.
+				Operation: "add",
 				Path:      "/spec/volumeName",
+				Value:     "",
 			},
 		},
 	}

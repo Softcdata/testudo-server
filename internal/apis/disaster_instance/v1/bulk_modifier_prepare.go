@@ -49,7 +49,7 @@ func (h *InstanceHandler) prepareRestorePolicyForPersist(
 	}
 	policy.BulkModifierActions = normalizedActions
 
-	if len(enabledBulkModifierActions(normalizedActions)) == 0 {
+	if len(enabledStaticBulkModifierActions(normalizedActions)) == 0 {
 		policy.ModifierRuleSnapshot = nil
 		policy.ModifierRuleSnapshotHash = ""
 		return h.validateEffectiveModifierRules(ctx, spec, nil)
@@ -111,7 +111,7 @@ func (h *InstanceHandler) validateEffectiveModifierRules(
 	}
 
 	effectivePolicy := spec.RestorePolicy.DeepCopy()
-	if len(enabledBulkModifierActions(effectivePolicy.BulkModifierActions)) > 0 {
+	if len(enabledStaticBulkModifierActions(effectivePolicy.BulkModifierActions)) > 0 {
 		effectivePolicy.ModifierRules = cloneRestoreModifierRules(effectivePolicy.ModifierRuleSnapshot)
 	} else {
 		effectivePolicy.ModifierRuleSnapshot = nil

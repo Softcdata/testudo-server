@@ -258,6 +258,310 @@ components:
             additionalProperties: true
             description: 待逐接口按 server DTO 与 operator 调用链补齐具体字段
             type: object
+        VeleroHookStatus:
+            description: Velero Backup/Restore status.hookStatus 摘要。`hooksAttempted` 是已尝试执行的 Hook 数量，`hooksFailed` 是失败数量。
+            type: object
+            properties:
+                hooksAttempted:
+                    type: integer
+                hooksFailed:
+                    type: integer
+        VeleroBackupHooks:
+            description: |-
+                Velero v1 BackupHooks 透传对象，写入 AppBackup.spec.template.hooks 或 DisasterInstance.spec.veleroHooks.dataBackup。
+
+                server 只做平台边界校验，不改写 command argv：includedResources 为空或包含 pods；exec.command 必须非空；onError 仅允许 Fail/Continue；exec.timeout 最大 10m；不支持平台占位符渲染；明显明文敏感参数（如 password=、token=、access_key=、secret=）会被硬拒绝并返回 meta.errorCode=VeleroHookSensitiveParameter 与 meta.fieldPath。
+            type: object
+            additionalProperties: true
+            properties:
+                resources:
+                    description: Velero backup resource hook specs。每项支持 name、includedNamespaces、excludedNamespaces、includedResources、excludedResources、labelSelector、pre、post 等 Velero 原生字段。
+                    type: array
+                    items:
+                        type: object
+                        additionalProperties: true
+            example:
+                resources:
+                    - name: freeze-db
+                      includedResources: [pods]
+                      labelSelector:
+                        matchLabels:
+                            app: mysql
+                      pre:
+                        - exec:
+                            container: mysql
+                            command: ["sh", "-c", "mysqladmin flush-tables --lock-tables"]
+                            onError: Fail
+                            timeout: 30s
+                      post:
+                        - exec:
+                            container: mysql
+                            command: ["sh", "-c", "mysqladmin unlock-tables"]
+                            onError: Continue
+                            timeout: 30s
+        VeleroRestoreHooks:
+            description: |-
+                Velero v1 RestoreHooks 透传对象，写入 AppRestore.spec.template.hooks、DisasterInstance.spec.veleroHooks.dataRestore 或 DisasterDrill.spec.veleroHooks.dataRestore。
+
+                server 只做平台边界校验，不改写 command argv：includedResources 为空或包含 pods；exec.command 必须非空；onError 仅允许 Fail/Continue；exec.execTimeout 最大 10m；exec.waitTimeout 最大 30m；init.timeout 最大 30m；不支持平台占位符渲染；明显明文敏感参数会被硬拒绝。敏感值应通过业务容器已有 Secret env、Secret volume、valueFrom 或 initContainer envFrom 传入，不要写进 command/args。
+            type: object
+            additionalProperties: true
+            properties:
+                resources:
+                    description: Velero restore resource hook specs。每项支持 name、includedNamespaces、excludedNamespaces、includedResources、excludedResources、labelSelector、postHooks 等 Velero 原生字段。
+                    type: array
+                    items:
+                        type: object
+                        additionalProperties: true
+            example:
+                resources:
+                    - name: warm-cache
+                      includedResources: [pods]
+                      postHooks:
+                        - exec:
+                            container: app
+                            command: ["sh", "-c", "/app/bin/warm-cache --source=/etc/app/config"]
+                            onError: Continue
+                            execTimeout: 2m
+                            waitTimeout: 10m
+                        - init:
+                            timeout: 5m
+                            initContainers:
+                                - name: restore-init
+                                  image: busybox:1.36
+                                  command: ["sh", "-c", "cp /secret/token /work/token"]
+                                  envFrom:
+                                    - secretRef:
+                                        name: app-restore-secret
+        DisasterVeleroHooks:
+            description: 容灾级 Velero Hook 配置。dataBackup 只用于 DataSync 数据备份，dataRestore 用于 DataSync 数据恢复；字段使用 presence/clear 语义，更新时未出现表示保持原值，null 或空对象表示清空对应字段。
+            type: object
+            properties:
+                dataBackup:
+                    $ref: '#/components/schemas/VeleroBackupHooks'
+                dataRestore:
+                    $ref: '#/components/schemas/VeleroRestoreHooks'
+        DisasterDrillVeleroHooks:
+            description: 演练级 Velero Hook 覆盖。仅支持 dataRestore；请求中出现 dataBackup 会返回 400，因为 Drill 不创建新的数据备份。创建 Drill 时如果显式传入 veleroHooks:{}，server 会写入非 nil 空对象，表示清空演练级 Hook 并阻断实例级 dataRestore Hook 继承。
+            type: object
+            properties:
+                dataRestore:
+                    $ref: '#/components/schemas/VeleroRestoreHooks'
+        SyncHistoryHookStatusDTO:
+            description: 同步历史中的 Hook 执行汇总，来自 DataSync 记录的 AppBackup/AppRestore Velero hookStatus。
+            type: object
+            properties:
+                hooksAttempted:
+                    type: integer
+                hooksFailed:
+                    type: integer
+        AppBackupSpecDTO:
+            description: AppBackup 对外 spec DTO。除列出字段外还可能回显其他 Velero BackupSpec 兼容字段。
+            type: object
+            additionalProperties: true
+            properties:
+                cluster:
+                    type: string
+                schedule:
+                    type: string
+                storageLocation:
+                    type: string
+                includedNamespaces:
+                    type: array
+                    items:
+                        type: string
+                hooks:
+                    $ref: '#/components/schemas/VeleroBackupHooks'
+        AppBackupDTO:
+            description: AppBackup 对外响应 DTO。spec.hooks 回显 CRD template.hooks；status.history[].veleroStatus.hookStatus 回显 Velero Backup Hook 执行汇总。
+            type: object
+            additionalProperties: true
+            properties:
+                name:
+                    type: string
+                namespace:
+                    type: string
+                spec:
+                    $ref: '#/components/schemas/AppBackupSpecDTO'
+                status:
+                    type: object
+                    additionalProperties: true
+        AppBackupCollectionEnvelope:
+            allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - type: object
+                  properties:
+                    data:
+                        type: object
+                        properties:
+                            items:
+                                type: array
+                                items:
+                                    $ref: '#/components/schemas/AppBackupDTO'
+                    meta:
+                        $ref: '#/components/schemas/CollectionMeta'
+        AppBackupEnvelope:
+            allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - type: object
+                  properties:
+                    data:
+                        $ref: '#/components/schemas/AppBackupDTO'
+        AppBackupCreateRequest:
+            description: 创建 AppBackup 请求体。hooks 原样写入 AppBackup.spec.template.hooks，并由 operator 继续透传给 Velero Backup/Schedule。
+            type: object
+            additionalProperties: true
+            properties:
+                name:
+                    type: string
+                cluster:
+                    type: string
+                schedule:
+                    type: string
+                storageLocation:
+                    type: string
+                hooks:
+                    $ref: '#/components/schemas/VeleroBackupHooks'
+            required: [name, cluster, schedule]
+        AppBackupUpdateRequest:
+            description: 更新 AppBackup 请求体。hooks 未出现表示保持原值；传对象表示整体替换；传 null 或空对象表示清空 template.hooks。
+            type: object
+            additionalProperties: true
+            properties:
+                name:
+                    type: string
+                hooks:
+                    nullable: true
+                    oneOf:
+                        - $ref: '#/components/schemas/VeleroBackupHooks'
+            required: [name]
+        BackupRecordDTO:
+            description: AppBackup 历史记录。veleroStatus.hookStatus 来自 Velero Backup status.hookStatus。
+            type: object
+            additionalProperties: true
+            properties:
+                name:
+                    type: string
+                phase:
+                    type: string
+                veleroStatus:
+                    type: object
+                    additionalProperties: true
+                    properties:
+                        hookStatus:
+                            $ref: '#/components/schemas/VeleroHookStatus'
+        BackupHistoryEnvelope:
+            allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - type: object
+                  properties:
+                    data:
+                        type: array
+                        items:
+                            $ref: '#/components/schemas/BackupRecordDTO'
+        AppRestoreSpecDTO:
+            description: AppRestore 对外 spec DTO。spec.hooks 回显 CRD template.hooks。
+            type: object
+            additionalProperties: true
+            properties:
+                backupSource:
+                    type: string
+                cluster:
+                    type: string
+                backupName:
+                    type: string
+                restorePVs:
+                    description: 是否恢复 PV 数据；为 true 时 server 会自动注入 PVC spec.volumeName 清理规则，使用 add /spec/volumeName 空值 patch 以避免字段不存在时失败。
+                    type: boolean
+                cleanVolumes:
+                    description: 是否清理 PVC 卷绑定；为 true 时 server 会自动注入 PVC spec.volumeName 清理规则，使用 add /spec/volumeName 空值 patch。
+                    type: boolean
+                hooks:
+                    $ref: '#/components/schemas/VeleroRestoreHooks'
+        AppRestoreDTO:
+            description: AppRestore 对外响应 DTO。spec.hooks 回显 CRD template.hooks；status.phase 透传 operator 顶层恢复状态，可能为 Pending、Initiating、Restoring、Succeeded、Failed、PartiallyFailed、Cancelled、Deleting、Unknown，其中 PartiallyFailed 表示 Velero Restore 已结束但存在错误，属于非成功终态；status.restoreStatus.hookStatus 回显 Velero Restore Hook 执行汇总。
+            type: object
+            additionalProperties: true
+            properties:
+                name:
+                    type: string
+                namespace:
+                    type: string
+                spec:
+                    $ref: '#/components/schemas/AppRestoreSpecDTO'
+                status:
+                    type: object
+                    additionalProperties: true
+                    properties:
+                        phase:
+                            type: string
+                            enum: [Pending, Initiating, Restoring, Succeeded, Failed, PartiallyFailed, Cancelled, Deleting, Unknown]
+                            description: AppRestore 顶层状态，来自 operator `AppRestore.status.status`。`PartiallyFailed` 直接对应 Velero Restore `PartiallyFailed`，server 不会将其映射为 `Succeeded`。
+                        restoreStatus:
+                            type: object
+                            additionalProperties: true
+                            properties:
+                                phase:
+                                    type: string
+                                    description: Velero Restore 原生 phase，例如 Completed、Failed、PartiallyFailed、InProgress 等。
+                                hookStatus:
+                                    $ref: '#/components/schemas/VeleroHookStatus'
+        AppRestoreCollectionEnvelope:
+            allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - type: object
+                  properties:
+                    data:
+                        type: object
+                        properties:
+                            items:
+                                type: array
+                                items:
+                                    $ref: '#/components/schemas/AppRestoreDTO'
+                    meta:
+                        $ref: '#/components/schemas/CollectionMeta'
+        AppRestoreEnvelope:
+            allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - type: object
+                  properties:
+                    data:
+                        $ref: '#/components/schemas/AppRestoreDTO'
+        AppRestoreCreateRequest:
+            description: 创建 AppRestore 请求体。hooks 原样写入 AppRestore.spec.template.hooks，并由 operator 继续透传给 Velero Restore。
+            type: object
+            additionalProperties: true
+            properties:
+                name:
+                    type: string
+                backupSource:
+                    type: string
+                cluster:
+                    type: string
+                backupName:
+                    type: string
+                hooks:
+                    $ref: '#/components/schemas/VeleroRestoreHooks'
+            required: [name, backupSource, cluster]
+        AppRestoreUpdateRequest:
+            description: 更新 AppRestore 请求体。hooks 未出现表示保持原值；传对象表示整体替换；传 null 或空对象表示清空 template.hooks。
+            type: object
+            additionalProperties: true
+            properties:
+                name:
+                    type: string
+                restorePVs:
+                    description: 字段存在且为 true 时覆盖 spec.template.restorePVs，并标准化 PVC spec.volumeName 清理规则；legacy remove /spec/volumeName 会被替换为 add /spec/volumeName 空值 patch。
+                    type: boolean
+                    nullable: true
+                cleanVolumes:
+                    description: 字段存在且为 true 时标准化 PVC spec.volumeName 清理规则；legacy remove /spec/volumeName 会被替换为 add /spec/volumeName 空值 patch。
+                    type: boolean
+                    nullable: true
+                hooks:
+                    nullable: true
+                    oneOf:
+                        - $ref: '#/components/schemas/VeleroRestoreHooks'
         KubernetesNamespace:
             description: Kubernetes Namespace 对象的文档化摘要。实际响应由 Kubernetes `corev1.Namespace` 序列化产生。
             properties:
@@ -1435,8 +1739,69 @@ components:
             description: server 通过 CurrentStateFromFSM 从 fsmState 映射出的前端聚合状态。
             type: string
             enum: [Running, Active, Paused, Transitioning, Failed, Unknown]
+        DisasterInstanceBulkModifierActionType:
+            description: 实例级批量资源修改动作类型。replaceExactValue/removeKey 为提交期静态动作，server 会扫描源集群资源并生成长期 modifierRuleSnapshot；rewriteImage 为运行时动态镜像重写意图，server 只校验并保存 DSL，由 operator 在 ResourceSync/Drill 恢复构建阶段读取源集群真实镜像并动态编译规则。
+            type: string
+            enum: [replaceExactValue, removeKey, rewriteImage]
+        DisasterInstanceImageRewriteUnmatchedPolicy:
+            description: rewriteImage 未匹配镜像策略。Keep 保留未匹配镜像，Fail 在运行时编译阶段拒绝本次恢复；空值由 server 归一化为 Keep。
+            type: string
+            enum: [Keep, Fail]
+        DisasterInstanceImageRewriteDigestPolicy:
+            description: rewriteImage digest 镜像处理策略。当前仅支持 Preserve，表示保留 tag 或 digest suffix。
+            type: string
+            enum: [Preserve]
+        DisasterInstanceDynamicImageRewrite:
+            description: rewriteImage 动作的稳定镜像前缀重写意图。该结构不保存完整镜像 tag/digest；源镜像完整值由 operator 在运行时读取源集群资源 spec 后动态推导。
+            type: object
+            properties:
+                sourcePrefix:
+                    description: 源侧镜像前缀，例如 10.11.11.1:5000/。必填，server trim 空白后校验非空。
+                    type: string
+                targetPrefix:
+                    description: 目标侧镜像前缀，例如 registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/。必填，server trim 空白后校验非空。
+                    type: string
+                unmatchedPolicy:
+                    $ref: '#/components/schemas/DisasterInstanceImageRewriteUnmatchedPolicy'
+                digestPolicy:
+                    $ref: '#/components/schemas/DisasterInstanceImageRewriteDigestPolicy'
+            required: [sourcePrefix, targetPrefix]
+        DisasterInstanceBulkModifierAction:
+            description: 实例级批量资源修改动作。action=replaceExactValue 时必须填写 sourceValue/targetValue；action=removeKey 时必须填写 key；action=rewriteImage 时必须填写 imageRewrite.sourcePrefix/targetPrefix，且不要求 sourceValue/targetValue。
+            type: object
+            properties:
+                id:
+                    description: 动作标识，用于错误诊断和生成稳定规则 ID。
+                    type: string
+                action:
+                    $ref: '#/components/schemas/DisasterInstanceBulkModifierActionType'
+                enabled:
+                    description: 是否启用动作。未传时 server 归一化为 true。
+                    type: boolean
+                applyTo:
+                    description: 动作应用场景。当前实例级 bulk 动作只支持 resourceSync 和 drill，不支持 dataSync；未传时 server 归一化为 [resourceSync]。
+                    type: array
+                    items:
+                        type: string
+                        enum: [resourceSync, drill]
+                directionPolicy:
+                    description: 方向策略。replaceExactValue/rewriteImage 默认 Auto；removeKey 默认 ForwardOnly。
+                    type: string
+                    enum: [Auto, ForwardOnly, ReverseOnly]
+                sourceValue:
+                    description: action=replaceExactValue 时的源侧完整值。
+                    type: string
+                targetValue:
+                    description: action=replaceExactValue 时的目标侧完整值。
+                    type: string
+                key:
+                    description: action=removeKey 时要删除的 map/object key。
+                    type: string
+                imageRewrite:
+                    $ref: '#/components/schemas/DisasterInstanceDynamicImageRewrite'
+            required: [action]
         DisasterInstanceRestorePolicy:
-            description: 实例级恢复策略。server 支持 resourceSelection、execution、storageClassMapping、ingressClassMapping、bulkModifierActions、bulkModifierActionsText、modifierRules、modifierRulesText、useUnifiedDirectionResolver，并在返回 DTO 中回显 modifierRuleSnapshot 和 modifierRuleSnapshotHash。
+            description: 实例级恢复策略。server 支持 resourceSelection、execution、storageClassMapping、ingressClassMapping、bulkModifierActions、bulkModifierActionsText、modifierRules、modifierRulesText、useUnifiedDirectionResolver，并在返回 DTO 中回显提交期静态 bulk action 生成的 modifierRuleSnapshot 和 modifierRuleSnapshotHash。rewriteImage 是运行时动态 action，不生成长期 modifierRuleSnapshot。
             type: object
             properties:
                 resourceSelection:
@@ -1452,11 +1817,10 @@ components:
                 ingressClassMapping:
                     $ref: '#/components/schemas/DisasterInstanceRestoreClassMappingPolicy'
                 bulkModifierActions:
-                    description: 结构化 bulk modifier action 列表，支持 replaceExactValue、removeKey。
+                    description: 结构化 bulk modifier action 列表，支持 replaceExactValue、removeKey、rewriteImage。replaceExactValue/removeKey 会在提交期扫描源集群生成长期快照；rewriteImage 只保存稳定镜像前缀重写意图，运行时动态编译。
                     type: array
                     items:
-                        type: object
-                        additionalProperties: true
+                        $ref: '#/components/schemas/DisasterInstanceBulkModifierAction'
                 bulkModifierActionsText:
                     description: bulk modifier action JSON 文本入口，可为对象或数组字符串。
                     type: string
@@ -1473,7 +1837,7 @@ components:
                     description: 是否使用统一方向解析器。
                     type: boolean
                 modifierRuleSnapshot:
-                    description: bulk modifier 展开后的 modifier rule 快照，仅响应 DTO 中返回。
+                    description: replaceExactValue/removeKey 等提交期静态 bulk modifier 展开后的 modifier rule 快照，仅响应 DTO 中返回。rewriteImage 不写入长期快照。
                     type: array
                     items:
                         type: object
@@ -1553,6 +1917,8 @@ components:
                     enum: [replica, initContainer]
                 restorePolicy:
                     $ref: '#/components/schemas/DisasterInstanceRestorePolicy'
+                veleroHooks:
+                    $ref: '#/components/schemas/DisasterVeleroHooks'
                 skipPodReadyCheck:
                     description: failover 默认是否跳过 Pod readyReplicas 校验。
                     type: boolean
@@ -1748,6 +2114,8 @@ components:
                     enum: [replica, initContainer]
                 restorePolicy:
                     $ref: '#/components/schemas/DisasterInstanceRestorePolicy'
+                veleroHooks:
+                    $ref: '#/components/schemas/DisasterVeleroHooks'
                 skipPodReadyCheck:
                     type: boolean
                 description:
@@ -1772,6 +2140,11 @@ components:
                     enum: [replica, initContainer]
                 restorePolicy:
                     $ref: '#/components/schemas/DisasterInstanceRestorePolicy'
+                veleroHooks:
+                    description: 更新容灾级 Velero Hook。未出现保持原值；传 null 或空对象清空全部；子字段 dataBackup/dataRestore 未出现保持对应子字段，传 null 或空对象清空对应子字段。
+                    nullable: true
+                    oneOf:
+                        - $ref: '#/components/schemas/DisasterVeleroHooks'
                 skipPodReadyCheck:
                     type: boolean
                 description:
@@ -2041,6 +2414,10 @@ components:
                 restoreResourceCount:
                     description: 上次同步恢复资源数量。
                     type: integer
+                backupHookStatus:
+                    $ref: '#/components/schemas/SyncHistoryHookStatusDTO'
+                restoreHookStatus:
+                    $ref: '#/components/schemas/SyncHistoryHookStatusDTO'
             required: [status]
         SubResourceStatusDTO:
             type: object
@@ -2133,6 +2510,10 @@ components:
                 restoreResourceCount:
                     description: 恢复资源数量。
                     type: integer
+                backupHookStatus:
+                    $ref: '#/components/schemas/SyncHistoryHookStatusDTO'
+                restoreHookStatus:
+                    $ref: '#/components/schemas/SyncHistoryHookStatusDTO'
                 subResourceName:
                     description: 来源 DataSync 或 ResourceSync 名称。
                     type: string
@@ -3118,6 +3499,8 @@ components:
                     type: boolean
                 restorePolicy:
                     $ref: '#/components/schemas/DisasterInstanceRestorePolicy'
+                veleroHooks:
+                    $ref: '#/components/schemas/DisasterDrillVeleroHooks'
                 status:
                     $ref: '#/components/schemas/DisasterDrillStatusDTO'
                 validationResults:
@@ -3185,6 +3568,8 @@ components:
                     type: boolean
                 restorePolicy:
                     $ref: '#/components/schemas/DisasterInstanceRestorePolicy'
+                veleroHooks:
+                    $ref: '#/components/schemas/DisasterDrillVeleroHooks'
         DisasterDrillDeleteResult:
             type: object
             properties:
@@ -5008,7 +5393,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.appBackups`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.appBackups`。返回 AppBackup 列表，`data.items[].spec.hooks` 回显 CRD template.hooks；备份历史详情中的 `veleroStatus.hookStatus` 用于展示 Hook attempted/failed。
 
                 ## 2. 控制哪些资源
 
@@ -5046,7 +5431,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Envelope'
+                                $ref: '#/components/schemas/AppBackupCollectionEnvelope'
                     description: 处理成功
                 "400":
                     content:
@@ -5114,7 +5499,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.createAppBackup`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.createAppBackup`。创建 AppBackup 时可传 `hooks`，server 校验后原样写入 `AppBackup.spec.template.hooks`，operator 后续透传到 Velero Backup/Schedule。
 
                 ## 2. 控制哪些资源
 
@@ -5144,16 +5529,16 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/GenericObject'
-                description: 请求体字段待逐接口按 server request struct 与 operator 调用链补齐。
-                required: false
+                            $ref: '#/components/schemas/AppBackupCreateRequest'
+                description: 创建 AppBackup 请求体；`hooks` 会写入 `spec.template.hooks` 并透传给 Velero Backup/Schedule。
+                required: true
             responses:
-                "200":
+                "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Envelope'
-                    description: 处理成功
+                                $ref: '#/components/schemas/AppBackupEnvelope'
+                    description: 创建成功
                 "400":
                     content:
                         application/json:
@@ -5333,7 +5718,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.appBackup`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.appBackup`。查询单个 AppBackup 详情，`data.spec.hooks` 回显当前 template.hooks，详情状态和历史可携带 Velero `hookStatus`。
 
                 ## 2. 控制哪些资源
 
@@ -5377,7 +5762,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Envelope'
+                                $ref: '#/components/schemas/AppBackupEnvelope'
                     description: 处理成功
                 "400":
                     content:
@@ -5445,7 +5830,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.updateAppBackup`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.updateAppBackup`。更新 AppBackup 时 `hooks` 未出现保持原值，传对象整体替换，传 null 或空对象清空 template.hooks。
 
                 ## 2. 控制哪些资源
 
@@ -5481,15 +5866,15 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/GenericObject'
-                description: 请求体字段待逐接口按 server request struct 与 operator 调用链补齐。
-                required: false
+                            $ref: '#/components/schemas/AppBackupUpdateRequest'
+                description: 更新 AppBackup 请求体；`hooks` 未出现保持原值，传对象整体替换，传 null 或空对象清空。
+                required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Envelope'
+                                $ref: '#/components/schemas/AppBackupEnvelope'
                     description: 处理成功
                 "400":
                     content:
@@ -5864,7 +6249,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Envelope'
+                                $ref: '#/components/schemas/BackupHistoryEnvelope'
                     description: 处理成功
                 "400":
                     content:
@@ -6353,7 +6738,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.appRestores`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.appRestores`。返回 AppRestore 列表，`data.items[].spec.hooks` 回显 CRD template.hooks，`data.items[].status.phase` 透传 operator 顶层恢复状态；当 Velero Restore 为 `PartiallyFailed` 时，该字段返回 `PartiallyFailed`，属于非成功终态，不会被 server 映射为 `Succeeded`。`status.restoreStatus.hookStatus` 展示 Velero Restore Hook attempted/failed。
 
                 ## 2. 控制哪些资源
 
@@ -6391,7 +6776,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Envelope'
+                                $ref: '#/components/schemas/AppRestoreCollectionEnvelope'
                     description: 处理成功
                 "400":
                     content:
@@ -6459,7 +6844,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.createAppRestore`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.createAppRestore`。创建 AppRestore 时可传 `hooks`，server 校验后原样写入 `AppRestore.spec.template.hooks`，operator 后续透传到 Velero Restore。请求中 `restorePVs=true` 或 `cleanVolumes=true` 时，server 会自动注入 PVC `spec.volumeName` 清理 ResourceModifierRule；该规则必须使用幂等 `add /spec/volumeName` 空值 patch，不得使用字段不存在时会失败的 `remove /spec/volumeName`。
 
                 ## 2. 控制哪些资源
 
@@ -6489,16 +6874,16 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/GenericObject'
-                description: 请求体字段待逐接口按 server request struct 与 operator 调用链补齐。
-                required: false
+                            $ref: '#/components/schemas/AppRestoreCreateRequest'
+                description: 创建 AppRestore 请求体；`hooks` 会写入 `spec.template.hooks` 并透传给 Velero Restore；`restorePVs=true` 或 `cleanVolumes=true` 会注入幂等 PVC volumeName 清理规则。
+                required: true
             responses:
-                "200":
+                "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Envelope'
-                    description: 处理成功
+                                $ref: '#/components/schemas/AppRestoreEnvelope'
+                    description: 创建成功
                 "400":
                     content:
                         application/json:
@@ -6678,7 +7063,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.appRestore`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.appRestore`。查询单个 AppRestore 详情，`data.spec.hooks` 回显当前 template.hooks，`data.status.phase` 透传 operator 顶层恢复状态；当 Velero Restore 为 `PartiallyFailed` 时，该字段返回 `PartiallyFailed`，属于非成功终态，不会被 server 映射为 `Succeeded`。`status.restoreStatus.hookStatus` 回显 Velero Hook attempted/failed。
 
                 ## 2. 控制哪些资源
 
@@ -6722,7 +7107,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Envelope'
+                                $ref: '#/components/schemas/AppRestoreEnvelope'
                     description: 处理成功
                 "400":
                     content:
@@ -6790,7 +7175,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.updateAppRestore`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.updateAppRestore`。更新 AppRestore 时 `hooks` 未出现保持原值，传对象整体替换，传 null 或空对象清空 template.hooks。请求中 `restorePVs=true` 或 `cleanVolumes=true` 时，server 会标准化现有 PVC `spec.volumeName` 清理 ResourceModifierRule：替换 legacy `remove /spec/volumeName`，并保留一个幂等 `add /spec/volumeName` 空值 patch。
 
                 ## 2. 控制哪些资源
 
@@ -6826,15 +7211,15 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/GenericObject'
-                description: 请求体字段待逐接口按 server request struct 与 operator 调用链补齐。
-                required: false
+                            $ref: '#/components/schemas/AppRestoreUpdateRequest'
+                description: 更新 AppRestore 请求体；`hooks` 未出现保持原值，传对象整体替换，传 null 或空对象清空；`restorePVs=true` 或 `cleanVolumes=true` 会标准化 PVC volumeName 清理规则并替换 legacy remove。
+                required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Envelope'
+                                $ref: '#/components/schemas/AppRestoreEnvelope'
                     description: 处理成功
                 "400":
                     content:
@@ -7129,7 +7514,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.watchAppRestores`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.watchAppRestores`。订阅 AppRestore 列表变化；推送对象的 `data.object.status.phase` 透传 operator 顶层恢复状态。当 Velero Restore 为 `PartiallyFailed` 时，该字段返回 `PartiallyFailed`，属于非成功终态，前端不得按成功处理。
 
                 ## 2. 控制哪些资源
 
@@ -7226,7 +7611,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.watchAppRestore`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.watchAppRestore`。订阅单个 AppRestore 变化；推送对象的 `data.object.status.phase` 透传 operator 顶层恢复状态。当 Velero Restore 为 `PartiallyFailed` 时，该字段返回 `PartiallyFailed`，属于非成功终态，前端不得按成功处理。
 
                 ## 2. 控制哪些资源
 
@@ -11752,11 +12137,11 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                创建 DisasterDrill。server 校验 instanceName/groupName 二选一、自定义 name 长度、目标实例或组存在性，并准备演练级 restorePolicy 后创建 Drill CRD。201 只表示 CRD 创建成功；operator 后续初始化 Pending、执行前置校验并进入 Ready，确认后才创建 drill DisasterOperation。
+                创建 DisasterDrill。server 校验 instanceName/groupName 二选一、自定义 name 长度、目标实例或组存在性、演练级 restorePolicy 和 veleroHooks.dataRestore 后创建 Drill CRD。显式传入 `veleroHooks:{}` 表示清空演练级 Hook 覆盖并阻断实例级 dataRestore Hook 继承。201 只表示 CRD 创建成功；operator 后续初始化 Pending、执行前置校验并进入 Ready，确认后才创建 drill DisasterOperation。
 
                 ## 2. 控制哪些资源
 
-                直接创建 DisasterDrill；同步写入目标对象 label 和 trace annotation。operator 后续创建 DisasterOperation，Operation 再读取 DataSync/ResourceSync 最近备份、创建 AppRestore，并在目标集群执行恢复和 ScaleUp。
+                直接创建 DisasterDrill；同步写入目标对象 label、trace annotation、可选 restorePolicy 和可选 veleroHooks。operator 后续创建 DisasterOperation，Operation 再读取 DataSync/ResourceSync 最近备份、创建 AppRestore，并在目标集群执行恢复和 ScaleUp；演练级 dataRestore hooks 会覆盖实例级 dataRestore hooks，显式空 veleroHooks 会作为清空覆盖复制到 Operation。
 
                 ## 3. 入参的详细说明
 
@@ -11771,19 +12156,24 @@ paths:
                 | `skipValidation` | 否 | 跳过前置校验 | true 时目标 Cluster 非 Ready 不阻断，但实例/组存在性仍由 operator 校验。 |
                 | `waitUntilReady` | 否 | 是否等待 Pod 就绪 | operator 写入 Drill Operation waitUntilReady，并把 skipPodReadyCheck 设为相反值。 |
                 | `restorePolicy` | 否 | 演练级恢复策略覆盖 | 解析 modifierRulesText/bulkModifierActionsText，校验 include/exclude、bulk action、modifier rule；modifier rule live path 按 JSON Patch 语义校验，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；组演练要求成员实例 sourceCluster 唯一。 |
+                | `veleroHooks.dataRestore` | 否 | 演练级恢复 Hook 覆盖 | Velero RestoreHooks 原生结构，写入 Drill spec 并复制到 Drill Operation；只影响演练恢复创建的 AppRestore template.hooks。 |
+                | `veleroHooks:{}` | 否 | 清空演练级 Hook 覆盖 | 顶层空对象会保留为非 nil 空 CRD 对象，表示本次 Drill 不继承实例级 dataRestore Hook。 |
+                | `veleroHooks.dataBackup` | 禁止 | 演练级备份 Hook | Drill 不创建数据备份；请求中只要出现 dataBackup 就返回 400。 |
 
                 ## 4. 返回的详细说明
 
                 | 字段 | 类型/取值 | 中文含义 | 来源/说明 |
                 |---|---|---|---|
                 | `data` | DisasterDrillDTO | 刚创建的 Drill | Kubernetes Create 后立即返回，status 可能尚未由 operator 初始化。 |
+                | `data.veleroHooks` | object/null | 演练级 Hook 回显 | 来自 DisasterDrill spec；仅包含 dataRestore。 |
                 | `data.status.state` | string | 演练状态 | 初始同步响应可能为空，随后 watch/详情变为 Pending/Ready。 |
 
                 ## 5. 可能返回的错误
 
                 | 状态 | 业务码 | 错误原因 | 触发条件 |
                 |---|---|---|---|
-                | 400 | `1000` | 请求或 restorePolicy 非法 | JSON 错误、二选一错误、name 超长、文本入口冲突、modifier/bulk/live 校验失败、`add` 的父路径不存在、`replace/remove` 路径不存在、组成员 sourceCluster 不唯一。 |
+                | 400 | `1000` | 请求、restorePolicy 或 Hook 非法 | JSON 错误、二选一错误、name 超长、文本入口冲突、modifier/bulk/live 校验失败、Hook 结构非法、Hook timeout 超过上限、出现 `veleroHooks.dataBackup`、组成员 sourceCluster 不唯一。 |
+                | 400 | `1000` + meta.errorCode=`VeleroHookSensitiveParameter` | Hook 明文敏感参数 | dataRestore command/args/env.value 中包含明显敏感片段；meta.fieldPath 返回字段路径。 |
                 | 404 | `3004` | 目标不存在 | 指定实例或组在指定 namespace 与全 namespace 回退中都未找到。 |
                 | 409 | `3009` | 同名 Drill 冲突 | Kubernetes Create 返回 AlreadyExists。 |
                 | 500 | `5000` | 创建失败 | 目标对象读取非 NotFound 错误或 Create 非 AlreadyExists 错误。 |
@@ -14509,11 +14899,11 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                创建 DisasterInstance。server 校验 `syncPolicy` 禁用、JSON/binding、DisasterConfig 存在性、受保护 namespace 冲突和 restorePolicy，然后创建 CRD。201 只表示 CRD 创建成功，operator 后续创建 DataSync `dr-ds-<name>` 与 ResourceSync `dr-rs-<name>` 并推进 fsmState。
+                创建 DisasterInstance。server 校验 `syncPolicy` 禁用、JSON/binding、DisasterConfig 存在性、受保护 namespace 冲突、restorePolicy 和 veleroHooks，然后创建 CRD。201 只表示 CRD 创建成功，operator 后续创建 DataSync `dr-ds-<name>` 与 ResourceSync `dr-rs-<name>` 并推进 fsmState。
 
                 ## 2. 控制哪些资源
 
-                直接创建 DisasterInstance，写入 config label、description annotation、trace annotation；operator 后续创建/维护 DataSync、ResourceSync，子资源继续驱动 AppBackup/AppRestore/Velero。
+                直接创建 DisasterInstance，写入 config label、description annotation、trace annotation 和可选 spec.veleroHooks；operator 后续创建/维护 DataSync、ResourceSync，DataSync 会将 veleroHooks.dataBackup 透传到 AppBackup template.hooks，并将 veleroHooks.dataRestore 透传到 AppRestore template.hooks。
 
                 ## 3. 入参的详细说明
 
@@ -14526,7 +14916,9 @@ paths:
                 | `namespaces` | 否 | 保护 namespace 列表 | 参与同 sourceCluster 受保护 namespace 冲突校验。 |
                 | `labelSelector` | 否 | 资源选择器 | 写入 spec；bulk/live modifier 校验可使用。 |
                 | `podRestoreMethod` | 否 | Pod 恢复方法 | `replica/initContainer`；空时 server 默认 `replica`。 |
-                | `restorePolicy` | 否 | 恢复策略 | 支持 resourceSelection、class mapping、bulk actions、modifier rules；文本和结构化入口同时存在时必须语义一致；modifier rule live path 按 JSON Patch 语义校验，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在。 |
+                | `restorePolicy` | 否 | 恢复策略 | 支持 resourceSelection、class mapping、bulk actions、modifier rules；文本和结构化入口同时存在时必须语义一致；modifier rule live path 按 JSON Patch 语义校验，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 静态快照生成会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**` 等受保护路径，不要求通过排除 pods 规避 status 命中；`bulkModifierActions[].action=rewriteImage` 只校验并保存 `imageRewrite.sourcePrefix/targetPrefix` 等运行时动态镜像重写意图，不在创建时生成长期 `modifierRuleSnapshot`。 |
+                | `veleroHooks.dataBackup` | 否 | DataSync 数据备份 Hook | Velero BackupHooks 原生结构，整体写入 DataSync 生成的 AppBackup `spec.template.hooks`；command argv 透明透传。 |
+                | `veleroHooks.dataRestore` | 否 | DataSync 数据恢复 Hook | Velero RestoreHooks 原生结构，整体写入 DataSync 生成的 AppRestore `spec.template.hooks`；restore initContainer 可通过 Secret env/envFrom 传敏感值。 |
                 | `skipPodReadyCheck` | 否 | Pod ready 默认校验策略 | 可被 action config 覆盖。 |
                 | `description` | 否 | 实例描述 | 写入 annotation。 |
 
@@ -14535,13 +14927,15 @@ paths:
                 | 字段 | 类型/取值 | 中文含义 | 来源/说明 |
                 |---|---|---|---|
                 | `data` | DisasterInstanceDTO | 刚创建的实例 | operator 通常尚未回写 status，`currentState` 可能为 `Unknown`。 |
+                | `data.spec.veleroHooks` | object/null | Hook 配置回显 | 来自刚写入的 DisasterInstance spec；未配置时省略。 |
                 | `trace_id` | string | 请求追踪 ID | 同步写入 CR annotation。 |
 
                 ## 5. 可能返回的错误
 
                 | 状态 | 业务码 | 错误原因 | 触发条件 |
                 |---|---|---|---|
-                | 400 | `1000` | 请求或策略非法 | binding、Config 不存在、ResourceSelectionInvalid、ModifierRulesTextInvalid、BulkModifierActionsTextInvalid、ModifierRuleRejected（如 `add` 父路径不存在、`replace/remove` 路径不存在）、Kubernetes Invalid/BadRequest。 |
+                | 400 | `1000` | 请求、策略或 Hook 非法 | binding、Config 不存在、ResourceSelectionInvalid、ModifierRulesTextInvalid、BulkModifierActionsTextInvalid、ModifierRuleRejected、Hook 结构非法、Hook timeout 超过上限、Kubernetes Invalid/BadRequest。 |
+                | 400 | `1000` + meta.errorCode=`VeleroHookSensitiveParameter` | Hook 明文敏感参数 | command/args/env.value 中包含明显敏感片段，如 `password=`、`token=`、`access_key=`、`secret=`；meta.fieldPath 返回字段路径。 |
                 | 403 | `2003` | 权限不足 | Kubernetes Create Forbidden。 |
                 | 409 | `3009` | 冲突 | 同名实例或受保护 namespace 冲突。 |
                 | 500 | `5000` | 创建失败 | 配置读取非 NotFound、保护索引构建失败或 Create 非分类错误。 |
@@ -14809,11 +15203,11 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                更新 DisasterInstance 的保护范围、策略 override、restorePolicy、podRestoreMethod、skipPodReadyCheck 和 description。server 使用 RetryOnConflict 读取现有实例并按请求中出现的字段合并更新。
+                更新 DisasterInstance 的保护范围、策略 override、restorePolicy、veleroHooks、podRestoreMethod、skipPodReadyCheck 和 description。server 使用 RetryOnConflict 读取现有实例并按请求中出现的字段合并更新。
 
                 ## 2. 控制哪些资源
 
-                直接更新 DisasterInstance spec/annotations/trace；operator 后续同步依赖标签和 DataSync/ResourceSync schedule。bulk modifier 快照或 live modifier 校验可能读取源集群资源。
+                直接更新 DisasterInstance spec/annotations/trace；operator 后续同步依赖标签、DataSync/ResourceSync schedule 和 veleroHooks。DataSync 会在后续同步前对齐既有 ds-* AppBackup template.hooks，确保实例 hooks 更新影响下一次备份。
 
                 ## 3. 入参的详细说明
 
@@ -14824,7 +15218,8 @@ paths:
                 | `dataSyncPolicy/resourceSyncPolicy` | 否 | 策略 override | 未传或 null 保持，空字符串清空。 |
                 | `namespaces` | 否 | 保护 namespace | 未传或 null 保持，空数组清空，会重新做保护冲突校验。 |
                 | `labelSelector` | 否 | 资源选择器 | 传对象整体替换；未传或 null 保持。 |
-                | `restorePolicy` | 否 | 恢复策略 | 未传或 null 不更新；传对象时合并出现的子字段；modifier rule live path 按 JSON Patch 语义校验，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在。 |
+                | `restorePolicy` | 否 | 恢复策略 | 未传或 null 不更新；传对象时合并出现的子字段；modifier rule live path 按 JSON Patch 语义校验，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 静态快照生成会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**` 等受保护路径，不要求通过排除 pods 规避 status 命中；`bulkModifierActions[].action=rewriteImage` 只校验并保存 `imageRewrite.sourcePrefix/targetPrefix` 等运行时动态镜像重写意图，不在更新时生成长期 `modifierRuleSnapshot`。 |
+                | `veleroHooks` | 否 | 容灾 Hook 配置 | 未出现保持原值；传 null 或 `{}` 清空全部；`dataBackup`/`dataRestore` 子字段未出现保持对应子字段，传 null 或 `{}` 清空对应子字段，传对象整体替换。 |
                 | `podRestoreMethod/skipPodReadyCheck/description` | 否 | 其他可更新字段 | description 空字符串清空 annotation。 |
 
                 ## 4. 返回的详细说明
@@ -14832,13 +15227,15 @@ paths:
                 | 字段 | 类型/取值 | 中文含义 | 来源/说明 |
                 |---|---|---|---|
                 | `data` | DisasterInstanceDTO | 更新后的实例 | operator status 可能尚未刷新。 |
-                | `data.spec.restorePolicy.modifierRuleSnapshot` | array | bulk 快照 | bulk action 生效时写入。 |
+                | `data.spec.veleroHooks` | object/null | 更新后的 Hook 配置 | 直接来自 DisasterInstance spec。 |
+                | `data.spec.restorePolicy.modifierRuleSnapshot` | array | bulk 快照 | replaceExactValue/removeKey 等提交期静态 bulk action 生效时写入；仅包含 rewriteImage 时为空，因为镜像规则由 operator 在 ResourceSync/Drill 恢复构建阶段运行时动态编译。 |
 
                 ## 5. 可能返回的错误
 
                 | 状态 | 业务码 | 错误原因 | 触发条件 |
                 |---|---|---|---|
-                | 400 | `1000` | 请求或校验非法 | syncPolicy、binding、config lister 不存在、restorePolicy 校验（如 `add` 父路径不存在、`replace/remove` 路径不存在）、Kubernetes Invalid/BadRequest。 |
+                | 400 | `1000` | 请求或校验非法 | syncPolicy、binding、config lister 不存在、restorePolicy 校验、Hook 结构非法、Hook timeout 超过上限、Kubernetes Invalid/BadRequest。 |
+                | 400 | `1000` + meta.errorCode=`VeleroHookSensitiveParameter` | Hook 明文敏感参数 | command/args/env.value 中包含明显敏感片段；meta.fieldPath 返回字段路径。 |
                 | 403 | `2003` | 权限不足 | Kubernetes Update Forbidden。 |
                 | 404 | `3004` | 实例不存在 | findNamespace 或 Get 返回 NotFound。 |
                 | 409 | `3009` | 保护范围冲突 | 受保护 namespace 冲突。 |
@@ -15483,6 +15880,7 @@ paths:
                 | `data.dataSync/resourceSync` | SubResourceStatusDTO | 子资源状态 | 子资源读取失败时省略；`status` 表示当前子资源状态。 |
                 | `data.dataSync.lastSyncStatus` | LastSyncStatusDTO | 最近一次数据同步结果 | 来自 DataSync `status.history` 最新记录；history 为空时省略。 |
                 | `data.resourceSync.lastSyncStatus` | LastSyncStatusDTO | 最近一次资源同步结果 | 来自 ResourceSync `status.history` 最新记录；history 为空时省略。 |
+                | `lastSyncStatus.backupHookStatus/restoreHookStatus` | object/null | Hook 执行汇总 | DataSync 来源记录从 AppBackup/AppRestore Velero hookStatus 复制；ResourceSync 未投影 hooks 时通常为空。 |
                 | `failureCount/syncSuccessCount/syncFailureCount` | integer | 统计 | 从 BackupRestoreStatistics 聚合；Failed 且统计为 0 时 failureCount 至少 1。 |
 
                 ## 5. 可能返回的错误
@@ -15585,6 +15983,7 @@ paths:
                 | `data.items[].syncType` | `dataSync/resourceSync/syncOnce` | 同步类型 | syncRecord 来源按子资源区分；operation 来源按 operationType 映射。 |
                 | `data.items[].source` | `syncRecord/operation` | 历史来源 | `syncRecord` 来自子资源 status.history；`operation` 来自 DisasterOperation。 |
                 | `data.items[].status.state` | `Pending/Running/Completed/Failed/Unknown` | 历史状态 | syncRecord 使用 record.status；operation 使用 operation.status.state。 |
+                | `data.items[].backupHookStatus/restoreHookStatus` | object/null | Hook 执行汇总 | 仅 syncRecord 来源稳定返回；来自 DataSync/ResourceSync status.history 中的 `backupHookStatus` / `restoreHookStatus`。 |
                 | `data.items[].operationName` | string | 操作名称 | 仅 source=operation 时返回，可继续查询 operation detail。 |
                 | `data.items[].hasOperationDetail` | boolean | 是否有详情 | source=operation 时为 true。 |
                 | `meta.summary.totalCount` | integer | 记录总数 | 过滤后、分页前统计。 |

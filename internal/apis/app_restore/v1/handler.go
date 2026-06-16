@@ -13,6 +13,7 @@ import (
 	dapisv1 "github.com/softcdata/testudo-operator/pkg/apis/disaster/v1"
 	listers "github.com/softcdata/testudo-operator/pkg/listers/disaster/v1"
 	metadata "github.com/softcdata/testudo-operator/pkg/metadata"
+	velerohooks "github.com/softcdata/testudo-server/internal/apis/velero_hooks"
 	"github.com/softcdata/testudo-server/internal/common"
 	"github.com/softcdata/testudo-server/internal/i18n"
 	"github.com/softcdata/testudo-server/internal/kube"
@@ -315,6 +316,10 @@ func (h *AppRestoreHandler) createAppRestore(c context.Context, ctx *app.Request
 		transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), nil)
 		return
 	}
+	if err := velerohooks.ValidateRestoreHooks(req.Hooks, "hooks"); err != nil {
+		transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), velerohooks.ErrorMeta(err))
+		return
+	}
 	body := dapisv1.AppRestore{
 		ObjectMeta: matev1.ObjectMeta{
 			Name:      req.Name,
@@ -497,6 +502,10 @@ func (h *AppRestoreHandler) updateAppRestore(c context.Context, ctx *app.Request
 		transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), nil)
 		return
 	}
+	if err := velerohooks.ValidateRestoreHooks(req.Hooks, "hooks"); err != nil {
+		transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), velerohooks.ErrorMeta(err))
+		return
+	}
 
 	// Validate ExistingResourcePolicy
 	if req.ExistingResourcePolicy != "" && req.ExistingResourcePolicy != "none" && req.ExistingResourcePolicy != "update" {
@@ -586,10 +595,27 @@ func isRestorePVsEnabled(v *bool) bool {
 }
 
 func ensureCleanVolumeRule(rules []dapisv1.ResourceModifierRule) []dapisv1.ResourceModifierRule {
-	if hasCleanVolumeRule(rules) {
-		return rules
+	normalized := make([]dapisv1.ResourceModifierRule, 0, len(rules)+1)
+	for i := range rules {
+		rule := rules[i]
+		if rule.Conditions.GroupResource != "persistentvolumeclaims" {
+			normalized = append(normalized, rule)
+			continue
+		}
+		patches := make([]dapisv1.JSONPatch, 0, len(rule.Patches))
+		for _, patch := range rule.Patches {
+			if isCleanVolumePatch(patch) {
+				continue
+			}
+			patches = append(patches, patch)
+		}
+		if len(patches) == 0 {
+			continue
+		}
+		rule.Patches = patches
+		normalized = append(normalized, rule)
 	}
-	return append(rules, resourcemodifier.CleanVolume())
+	return append(normalized, resourcemodifier.CleanVolume())
 }
 
 func hasCleanVolumeRule(rules []dapisv1.ResourceModifierRule) bool {
@@ -599,12 +625,21 @@ func hasCleanVolumeRule(rules []dapisv1.ResourceModifierRule) bool {
 			continue
 		}
 		for _, patch := range rule.Patches {
-			if patch.Operation == "remove" && patch.Path == "/spec/volumeName" {
+			if isIdempotentCleanVolumePatch(patch) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func isCleanVolumePatch(patch dapisv1.JSONPatch) bool {
+	return patch.Path == "/spec/volumeName" &&
+		(patch.Operation == "remove" || isIdempotentCleanVolumePatch(patch))
+}
+
+func isIdempotentCleanVolumePatch(patch dapisv1.JSONPatch) bool {
+	return patch.Operation == "add" && patch.Path == "/spec/volumeName" && patch.Value == ""
 }
 
 func resolveStorageClassMapping(storageClassMapping, scMapping map[string]string) (map[string]string, error) {

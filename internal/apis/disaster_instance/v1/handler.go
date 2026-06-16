@@ -17,6 +17,7 @@ import (
 	dapisv1 "github.com/softcdata/testudo-operator/pkg/apis/disaster/v1"
 	listers "github.com/softcdata/testudo-operator/pkg/listers/disaster/v1"
 	metadata "github.com/softcdata/testudo-operator/pkg/metadata"
+	velerohooks "github.com/softcdata/testudo-server/internal/apis/velero_hooks"
 	"github.com/softcdata/testudo-server/internal/common"
 	"github.com/softcdata/testudo-server/internal/i18n"
 	"github.com/softcdata/testudo-server/internal/kube"
@@ -423,6 +424,10 @@ func (h *InstanceHandler) createInstance(c context.Context, ctx *app.RequestCont
 	spec, err := req.ToCRD()
 	if err != nil {
 		transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), nil)
+		return
+	}
+	if err := velerohooks.ValidateDisasterVeleroHooks(spec.VeleroHooks, "veleroHooks"); err != nil {
+		transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), velerohooks.ErrorMeta(err))
 		return
 	}
 
@@ -1110,6 +1115,10 @@ func (h *InstanceHandler) updateInstance(c context.Context, ctx *app.RequestCont
 		if req.SkipPodReadyCheck != nil {
 			existing.Spec.SkipPodReadyCheck = req.SkipPodReadyCheck
 		}
+		req.ApplyVeleroHooksPatch(&existing.Spec)
+		if err := velerohooks.ValidateDisasterVeleroHooks(existing.Spec.VeleroHooks, "veleroHooks"); err != nil {
+			return err
+		}
 		sourceCluster, err := h.resolveProtectedNamespaceSourceCluster(existing.Spec.Config)
 		if err != nil {
 			return err
@@ -1148,6 +1157,10 @@ func (h *InstanceHandler) updateInstance(c context.Context, ctx *app.RequestCont
 		}
 		if isModifierRuleValidationError(err) {
 			transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), nil)
+			return
+		}
+		if _, ok := err.(*velerohooks.ValidationError); ok {
+			transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), velerohooks.ErrorMeta(err))
 			return
 		}
 		if errors.IsNotFound(err) {
@@ -1429,6 +1442,18 @@ func convertLastSyncStatus(record *dapisv1.SyncHistoryRecord) *LastSyncStatusDTO
 		RestoreName:          record.RestoreName,
 		BackupResourceCount:  record.BackupResourceCount,
 		RestoreResourceCount: record.RestoreResourceCount,
+		BackupHookStatus:     convertSyncHistoryHookStatus(record.BackupHookStatus),
+		RestoreHookStatus:    convertSyncHistoryHookStatus(record.RestoreHookStatus),
+	}
+}
+
+func convertSyncHistoryHookStatus(status *dapisv1.SyncHistoryHookStatus) *SyncHistoryHookStatusDTO {
+	if status == nil {
+		return nil
+	}
+	return &SyncHistoryHookStatusDTO{
+		HooksAttempted: status.HooksAttempted,
+		HooksFailed:    status.HooksFailed,
 	}
 }
 
@@ -1494,6 +1519,8 @@ func appendSyncRecordHistory(items *[]syncHistoryItemWithSort, syncType, subReso
 				RestoreName:          record.RestoreName,
 				BackupResourceCount:  record.BackupResourceCount,
 				RestoreResourceCount: record.RestoreResourceCount,
+				BackupHookStatus:     convertSyncHistoryHookStatus(record.BackupHookStatus),
+				RestoreHookStatus:    convertSyncHistoryHookStatus(record.RestoreHookStatus),
 				SubResourceName:      subResourceName,
 				HasOperationDetail:   false,
 			},

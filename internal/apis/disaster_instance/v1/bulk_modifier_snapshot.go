@@ -76,7 +76,7 @@ func buildBulkModifierSnapshot(
 		return nil, err
 	}
 	result.Actions = cloneBulkModifierActions(normalizedActions)
-	if len(enabledBulkModifierActions(normalizedActions)) == 0 {
+	if len(enabledStaticBulkModifierActions(normalizedActions)) == 0 {
 		return result, nil
 	}
 	if restConfig == nil {
@@ -107,14 +107,21 @@ func buildBulkModifierSnapshotFromResources(
 		return result, nil
 	}
 
-	effectiveActions := enabledBulkModifierActions(normalizedActions)
-	if len(effectiveActions) == 0 {
+	if len(enabledStaticBulkModifierActions(normalizedActions)) == 0 {
 		return result, nil
 	}
 
 	generated := make([]dapisv1.RestoreModifierRule, 0)
-	for actionIdx := range effectiveActions {
-		action := effectiveActions[actionIdx]
+	for actionIdx := range normalizedActions {
+		action := normalizedActions[actionIdx]
+		if action.Enabled != nil && !*action.Enabled {
+			continue
+		}
+		switch action.Action {
+		case dapisv1.BulkModifierActionReplaceExactValue, dapisv1.BulkModifierActionRemoveKey:
+		default:
+			continue
+		}
 		actionMatches := collectBulkModifierMatches(resources, action)
 		if len(actionMatches) == 0 {
 			return nil, fmt.Errorf(
@@ -196,6 +203,42 @@ func normalizeBulkModifierAction(action dapisv1.BulkModifierAction, idx int) (da
 		} else {
 			normalized.DirectionPolicy = normalizeRestoreDirectionPolicy(normalized.DirectionPolicy)
 		}
+	case string(dapisv1.BulkModifierActionRewriteImage):
+		normalized.Action = dapisv1.BulkModifierActionRewriteImage
+		normalized.DirectionPolicy = normalizeRestoreDirectionPolicy(normalized.DirectionPolicy)
+		if normalized.ImageRewrite == nil {
+			return dapisv1.BulkModifierAction{}, fmt.Errorf("%s: action=%s imageRewrite is required", modifierRuleRejectedCode, bulkModifierActionID(normalized, idx))
+		}
+		normalized.ImageRewrite.SourcePrefix = strings.TrimSpace(normalized.ImageRewrite.SourcePrefix)
+		normalized.ImageRewrite.TargetPrefix = strings.TrimSpace(normalized.ImageRewrite.TargetPrefix)
+		if normalized.ImageRewrite.SourcePrefix == "" {
+			return dapisv1.BulkModifierAction{}, fmt.Errorf("%s: action=%s imageRewrite.sourcePrefix is required", modifierRuleRejectedCode, bulkModifierActionID(normalized, idx))
+		}
+		if normalized.ImageRewrite.TargetPrefix == "" {
+			return dapisv1.BulkModifierAction{}, fmt.Errorf("%s: action=%s imageRewrite.targetPrefix is required", modifierRuleRejectedCode, bulkModifierActionID(normalized, idx))
+		}
+		switch normalized.ImageRewrite.UnmatchedPolicy {
+		case "":
+			normalized.ImageRewrite.UnmatchedPolicy = dapisv1.ImageRewriteUnmatchedPolicyKeep
+		case dapisv1.ImageRewriteUnmatchedPolicyKeep, dapisv1.ImageRewriteUnmatchedPolicyFail:
+		default:
+			return dapisv1.BulkModifierAction{}, fmt.Errorf(
+				"%s: action=%s imageRewrite.unmatchedPolicy must be one of [Keep Fail]",
+				modifierRuleRejectedCode,
+				bulkModifierActionID(normalized, idx),
+			)
+		}
+		switch normalized.ImageRewrite.DigestPolicy {
+		case "":
+			normalized.ImageRewrite.DigestPolicy = dapisv1.ImageRewriteDigestPolicyPreserve
+		case dapisv1.ImageRewriteDigestPolicyPreserve:
+		default:
+			return dapisv1.BulkModifierAction{}, fmt.Errorf(
+				"%s: action=%s imageRewrite.digestPolicy must be Preserve",
+				modifierRuleRejectedCode,
+				bulkModifierActionID(normalized, idx),
+			)
+		}
 	default:
 		return dapisv1.BulkModifierAction{}, fmt.Errorf(
 			"%s: action=%s unsupported action=%s",
@@ -248,6 +291,24 @@ func enabledBulkModifierActions(actions []dapisv1.BulkModifierAction) []dapisv1.
 			continue
 		}
 		out = append(out, *copied)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func enabledStaticBulkModifierActions(actions []dapisv1.BulkModifierAction) []dapisv1.BulkModifierAction {
+	enabled := enabledBulkModifierActions(actions)
+	if len(enabled) == 0 {
+		return nil
+	}
+	out := make([]dapisv1.BulkModifierAction, 0, len(enabled))
+	for idx := range enabled {
+		switch enabled[idx].Action {
+		case dapisv1.BulkModifierActionReplaceExactValue, dapisv1.BulkModifierActionRemoveKey:
+			out = append(out, enabled[idx])
+		}
 	}
 	if len(out) == 0 {
 		return nil
@@ -558,15 +619,21 @@ func collectReplaceExactValueMatches(resource bulkScannedResource, sourceValue s
 			keys := sortedMapKeys(typed)
 			for _, key := range keys {
 				childPath := path + "/" + escapeJSONPointerToken(key)
+				if modifierPatchPathForbidden(childPath) {
+					continue
+				}
 				walk(typed[key], childPath)
 			}
 		case []any:
 			for idx, item := range typed {
 				childPath := path + "/" + strconv.Itoa(idx)
+				if modifierPatchPathForbidden(childPath) {
+					continue
+				}
 				walk(item, childPath)
 			}
 		case string:
-			if typed == sourceValue {
+			if typed == sourceValue && modifierPatchPathAllowed(path) {
 				matches = append(matches, bulkModifierMatch{
 					GroupResource: resource.GroupResource,
 					Namespace:     resource.Namespace,
@@ -589,7 +656,10 @@ func collectRemoveKeyMatches(resource bulkScannedResource, targetKey string) []b
 			keys := sortedMapKeys(typed)
 			for _, key := range keys {
 				childPath := path + "/" + escapeJSONPointerToken(key)
-				if key == targetKey {
+				if modifierPatchPathForbidden(childPath) {
+					continue
+				}
+				if key == targetKey && modifierPatchPathAllowed(childPath) {
 					matches = append(matches, bulkModifierMatch{
 						GroupResource: resource.GroupResource,
 						Namespace:     resource.Namespace,
@@ -602,6 +672,9 @@ func collectRemoveKeyMatches(resource bulkScannedResource, targetKey string) []b
 		case []any:
 			for idx, item := range typed {
 				childPath := path + "/" + strconv.Itoa(idx)
+				if modifierPatchPathForbidden(childPath) {
+					continue
+				}
 				walk(item, childPath)
 			}
 		}

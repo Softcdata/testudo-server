@@ -57,6 +57,29 @@ func TestEnsureCleanVolumeRule_NoDuplicate(t *testing.T) {
 			},
 			Patches: []dapisv1.JSONPatch{
 				{
+					Operation: "add",
+					Path:      "/spec/volumeName",
+					Value:     "",
+				},
+			},
+		},
+	}
+
+	got := ensureCleanVolumeRule(rules)
+	assert.Len(t, got, 1)
+	assert.True(t, hasCleanVolumeRule(got))
+	assert.Equal(t, "add", got[0].Patches[0].Operation)
+	assert.Equal(t, "", got[0].Patches[0].Value)
+}
+
+func TestEnsureCleanVolumeRule_ReplacesLegacyRemove(t *testing.T) {
+	rules := []dapisv1.ResourceModifierRule{
+		{
+			Conditions: dapisv1.Conditions{
+				GroupResource: "persistentvolumeclaims",
+			},
+			Patches: []dapisv1.JSONPatch{
+				{
 					Operation: "remove",
 					Path:      "/spec/volumeName",
 				},
@@ -67,6 +90,9 @@ func TestEnsureCleanVolumeRule_NoDuplicate(t *testing.T) {
 	got := ensureCleanVolumeRule(rules)
 	assert.Len(t, got, 1)
 	assert.True(t, hasCleanVolumeRule(got))
+	assert.Equal(t, "add", got[0].Patches[0].Operation)
+	assert.Equal(t, "/spec/volumeName", got[0].Patches[0].Path)
+	assert.Equal(t, "", got[0].Patches[0].Value)
 }
 
 func TestEnsureCleanVolumeRule_AutoAppend(t *testing.T) {
@@ -88,4 +114,6 @@ func TestEnsureCleanVolumeRule_AutoAppend(t *testing.T) {
 	got := ensureCleanVolumeRule(rules)
 	assert.Len(t, got, 2)
 	assert.True(t, hasCleanVolumeRule(got))
+	assert.Equal(t, "add", got[1].Patches[0].Operation)
+	assert.Equal(t, "", got[1].Patches[0].Value)
 }

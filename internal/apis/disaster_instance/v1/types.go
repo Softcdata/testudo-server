@@ -9,6 +9,7 @@ import (
 	dapisv1 "github.com/softcdata/testudo-operator/pkg/apis/disaster/v1"
 	configv1 "github.com/softcdata/testudo-server/internal/apis/disaster_config/v1"
 	storagev1 "github.com/softcdata/testudo-server/internal/apis/disaster_storage/v1"
+	velerohooks "github.com/softcdata/testudo-server/internal/apis/velero_hooks"
 	"github.com/softcdata/testudo-server/internal/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -51,19 +52,20 @@ type SyncSummaryDTO struct {
 }
 
 type DisasterInstanceSpecDTO struct {
-	Config                      string                `json:"config"`
-	DataSyncPolicy              string                `json:"dataSyncPolicy,omitempty"`
-	ResourceSyncPolicy          string                `json:"resourceSyncPolicy,omitempty"`
-	EffectiveDataSyncPolicy     string                `json:"effectiveDataSyncPolicy,omitempty"`
-	EffectiveResourceSyncPolicy string                `json:"effectiveResourceSyncPolicy,omitempty"`
-	DataSyncPolicySource        string                `json:"dataSyncPolicySource,omitempty"`
-	ResourceSyncPolicySource    string                `json:"resourceSyncPolicySource,omitempty"`
-	Namespaces                  []string              `json:"namespaces,omitempty"`
-	LabelSelector               *metav1.LabelSelector `json:"labelSelector,omitempty"`
-	PodRestoreMethod            string                `json:"podRestoreMethod,omitempty"`
-	RestorePolicy               *RestorePolicyDTO     `json:"restorePolicy,omitempty"`
-	SkipPodReadyCheck           *bool                 `json:"skipPodReadyCheck,omitempty"`
-	Description                 string                `json:"description,omitempty"`
+	Config                      string                       `json:"config"`
+	DataSyncPolicy              string                       `json:"dataSyncPolicy,omitempty"`
+	ResourceSyncPolicy          string                       `json:"resourceSyncPolicy,omitempty"`
+	EffectiveDataSyncPolicy     string                       `json:"effectiveDataSyncPolicy,omitempty"`
+	EffectiveResourceSyncPolicy string                       `json:"effectiveResourceSyncPolicy,omitempty"`
+	DataSyncPolicySource        string                       `json:"dataSyncPolicySource,omitempty"`
+	ResourceSyncPolicySource    string                       `json:"resourceSyncPolicySource,omitempty"`
+	Namespaces                  []string                     `json:"namespaces,omitempty"`
+	LabelSelector               *metav1.LabelSelector        `json:"labelSelector,omitempty"`
+	PodRestoreMethod            string                       `json:"podRestoreMethod,omitempty"`
+	RestorePolicy               *RestorePolicyDTO            `json:"restorePolicy,omitempty"`
+	VeleroHooks                 *dapisv1.DisasterVeleroHooks `json:"veleroHooks,omitempty"`
+	SkipPodReadyCheck           *bool                        `json:"skipPodReadyCheck,omitempty"`
+	Description                 string                       `json:"description,omitempty"`
 }
 
 // RestorePolicyDTO explicitly mirrors operator RestorePolicy fields and adds text echo for modifier rules and bulk actions.
@@ -139,14 +141,21 @@ type SubResourceStatusDTO struct {
 }
 
 type LastSyncStatusDTO struct {
-	Status               string            `json:"status"`
-	StartTime            *common.LocalTime `json:"startTime,omitempty"`
-	CompletionTime       *common.LocalTime `json:"completionTime,omitempty"`
-	Duration             string            `json:"duration,omitempty"`
-	BackupName           string            `json:"backupName,omitempty"`
-	RestoreName          string            `json:"restoreName,omitempty"`
-	BackupResourceCount  int               `json:"backupResourceCount,omitempty"`
-	RestoreResourceCount int               `json:"restoreResourceCount,omitempty"`
+	Status               string                    `json:"status"`
+	StartTime            *common.LocalTime         `json:"startTime,omitempty"`
+	CompletionTime       *common.LocalTime         `json:"completionTime,omitempty"`
+	Duration             string                    `json:"duration,omitempty"`
+	BackupName           string                    `json:"backupName,omitempty"`
+	RestoreName          string                    `json:"restoreName,omitempty"`
+	BackupResourceCount  int                       `json:"backupResourceCount,omitempty"`
+	RestoreResourceCount int                       `json:"restoreResourceCount,omitempty"`
+	BackupHookStatus     *SyncHistoryHookStatusDTO `json:"backupHookStatus,omitempty"`
+	RestoreHookStatus    *SyncHistoryHookStatusDTO `json:"restoreHookStatus,omitempty"`
+}
+
+type SyncHistoryHookStatusDTO struct {
+	HooksAttempted int `json:"hooksAttempted,omitempty"`
+	HooksFailed    int `json:"hooksFailed,omitempty"`
 }
 
 // HistoryStatusDTO 历史记录的统一状态对象
@@ -157,22 +166,24 @@ type HistoryStatusDTO struct {
 }
 
 type SyncHistoryItemDTO struct {
-	ID                   string            `json:"id"`
-	SyncType             string            `json:"syncType"`
-	Source               string            `json:"source"`
-	Status               HistoryStatusDTO  `json:"status"`
-	StartTime            *common.LocalTime `json:"startTime,omitempty"`
-	CompletionTime       *common.LocalTime `json:"completionTime,omitempty"`
-	Duration             string            `json:"duration,omitempty"`
-	BackupName           string            `json:"backupName,omitempty"`
-	RestoreName          string            `json:"restoreName,omitempty"`
-	BackupResourceCount  int               `json:"backupResourceCount,omitempty"`
-	RestoreResourceCount int               `json:"restoreResourceCount,omitempty"`
-	SubResourceName      string            `json:"subResourceName,omitempty"`
-	OperationName        string            `json:"operationName,omitempty"`
-	OperationUID         string            `json:"operationUID,omitempty"`
-	OperationType        string            `json:"operationType,omitempty"`
-	HasOperationDetail   bool              `json:"hasOperationDetail"`
+	ID                   string                    `json:"id"`
+	SyncType             string                    `json:"syncType"`
+	Source               string                    `json:"source"`
+	Status               HistoryStatusDTO          `json:"status"`
+	StartTime            *common.LocalTime         `json:"startTime,omitempty"`
+	CompletionTime       *common.LocalTime         `json:"completionTime,omitempty"`
+	Duration             string                    `json:"duration,omitempty"`
+	BackupName           string                    `json:"backupName,omitempty"`
+	RestoreName          string                    `json:"restoreName,omitempty"`
+	BackupResourceCount  int                       `json:"backupResourceCount,omitempty"`
+	RestoreResourceCount int                       `json:"restoreResourceCount,omitempty"`
+	BackupHookStatus     *SyncHistoryHookStatusDTO `json:"backupHookStatus,omitempty"`
+	RestoreHookStatus    *SyncHistoryHookStatusDTO `json:"restoreHookStatus,omitempty"`
+	SubResourceName      string                    `json:"subResourceName,omitempty"`
+	OperationName        string                    `json:"operationName,omitempty"`
+	OperationUID         string                    `json:"operationUID,omitempty"`
+	OperationType        string                    `json:"operationType,omitempty"`
+	HasOperationDetail   bool                      `json:"hasOperationDetail"`
 }
 
 // HistoryDTO 用于 "历史操作记录" Tab
@@ -207,28 +218,61 @@ type AutoCancelSummaryDTO struct {
 // Request DTOs
 
 type CreateDisasterInstanceRequest struct {
-	Name               string                `json:"name" binding:"required"`
-	Namespace          string                `json:"namespace"` // CR Namespace
-	Config             string                `json:"config" binding:"required"`
-	DataSyncPolicy     *string               `json:"dataSyncPolicy,omitempty"`
-	ResourceSyncPolicy *string               `json:"resourceSyncPolicy,omitempty"`
-	Namespaces         []string              `json:"namespaces,omitempty"`
-	LabelSelector      *metav1.LabelSelector `json:"labelSelector,omitempty"`
-	PodRestoreMethod   string                `json:"podRestoreMethod,omitempty"`
-	RestorePolicy      *RestorePolicyRequest `json:"restorePolicy,omitempty"`
-	SkipPodReadyCheck  *bool                 `json:"skipPodReadyCheck,omitempty"`
-	Description        string                `json:"description,omitempty"`
+	Name               string                                  `json:"name" binding:"required"`
+	Namespace          string                                  `json:"namespace"` // CR Namespace
+	Config             string                                  `json:"config" binding:"required"`
+	DataSyncPolicy     *string                                 `json:"dataSyncPolicy,omitempty"`
+	ResourceSyncPolicy *string                                 `json:"resourceSyncPolicy,omitempty"`
+	Namespaces         []string                                `json:"namespaces,omitempty"`
+	LabelSelector      *metav1.LabelSelector                   `json:"labelSelector,omitempty"`
+	PodRestoreMethod   string                                  `json:"podRestoreMethod,omitempty"`
+	RestorePolicy      *RestorePolicyRequest                   `json:"restorePolicy,omitempty"`
+	VeleroHooks        *velerohooks.DisasterVeleroHooksRequest `json:"veleroHooks,omitempty"`
+	SkipPodReadyCheck  *bool                                   `json:"skipPodReadyCheck,omitempty"`
+	Description        string                                  `json:"description,omitempty"`
 }
 
 type UpdateDisasterInstanceRequest struct {
-	DataSyncPolicy     *string               `json:"dataSyncPolicy,omitempty"`
-	ResourceSyncPolicy *string               `json:"resourceSyncPolicy,omitempty"`
-	Namespaces         []string              `json:"namespaces,omitempty"`
-	LabelSelector      *metav1.LabelSelector `json:"labelSelector,omitempty"`
-	PodRestoreMethod   *string               `json:"podRestoreMethod,omitempty"`
-	RestorePolicy      *RestorePolicyRequest `json:"restorePolicy,omitempty"`
-	SkipPodReadyCheck  *bool                 `json:"skipPodReadyCheck,omitempty"`
-	Description        *string               `json:"description,omitempty"`
+	DataSyncPolicy     *string                                 `json:"dataSyncPolicy,omitempty"`
+	ResourceSyncPolicy *string                                 `json:"resourceSyncPolicy,omitempty"`
+	Namespaces         []string                                `json:"namespaces,omitempty"`
+	LabelSelector      *metav1.LabelSelector                   `json:"labelSelector,omitempty"`
+	PodRestoreMethod   *string                                 `json:"podRestoreMethod,omitempty"`
+	RestorePolicy      *RestorePolicyRequest                   `json:"restorePolicy,omitempty"`
+	VeleroHooks        *velerohooks.DisasterVeleroHooksRequest `json:"veleroHooks,omitempty"`
+	SkipPodReadyCheck  *bool                                   `json:"skipPodReadyCheck,omitempty"`
+	Description        *string                                 `json:"description,omitempty"`
+
+	veleroHooksPatch velerohooks.DisasterVeleroHooksPatch
+}
+
+func (r *UpdateDisasterInstanceRequest) UnmarshalJSON(data []byte) error {
+	type updateDisasterInstanceRequestAlias UpdateDisasterInstanceRequest
+	var decoded updateDisasterInstanceRequestAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*r = UpdateDisasterInstanceRequest(decoded)
+	patch, err := velerohooks.DecodeDisasterVeleroHooksPatch(raw["veleroHooks"])
+	if err != nil {
+		return err
+	}
+	r.veleroHooksPatch = patch
+	if patch.Set {
+		r.VeleroHooks = patch.Value
+	}
+	return nil
+}
+
+func (r *UpdateDisasterInstanceRequest) ApplyVeleroHooksPatch(spec *dapisv1.DisasterInstanceSpec) {
+	if r == nil || spec == nil {
+		return
+	}
+	velerohooks.ApplyDisasterVeleroHooksPatch(&spec.VeleroHooks, r.veleroHooksPatch)
 }
 
 // RestorePolicyRequest extends operator RestorePolicy with text input for modifier rules and bulk actions.
@@ -378,6 +422,7 @@ func ConvertToDisasterInstanceDTO(item *dapisv1.DisasterInstance, config *dapisv
 			LabelSelector:      item.Spec.LabelSelector,
 			PodRestoreMethod:   item.Spec.PodRestoreMethod,
 			RestorePolicy:      convertRestorePolicyDTO(item.Spec.RestorePolicy),
+			VeleroHooks:        item.Spec.VeleroHooks,
 			SkipPodReadyCheck:  item.Spec.SkipPodReadyCheck,
 			Description:        item.Annotations["testudo.softcdata.com/description"],
 		},
@@ -553,6 +598,7 @@ func (r *CreateDisasterInstanceRequest) ToCRD() (dapisv1.DisasterInstanceSpec, e
 		LabelSelector:     r.LabelSelector,
 		PodRestoreMethod:  r.PodRestoreMethod,
 		RestorePolicy:     restorePolicy,
+		VeleroHooks:       r.VeleroHooks.ToCRD(),
 		SkipPodReadyCheck: r.SkipPodReadyCheck,
 	}
 	r.applyPolicyFields(&spec)

@@ -1185,6 +1185,138 @@ func TestCreateInstance_WithBulkModifierActionsBuildsSnapshot(t *testing.T) {
 	}
 }
 
+func TestCreateInstance_WithRewriteImageBulkModifierPersistsRuntimeIntentWithoutSnapshot(t *testing.T) {
+	ns := "disaster-system"
+	cfg := &dapisv1.DisasterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cfg-1"},
+	}
+	h := newMockHandler(cfg)
+	h.BuildBulkModifierSnapshotFunc = func(context.Context, *dapisv1.DisasterInstanceSpec, *rest.Config) (*bulkModifierSnapshotBuildResult, error) {
+		t.Fatalf("rewriteImage should not run static bulk snapshot builder")
+		return nil, nil
+	}
+
+	ctx := app.NewContext(16)
+	ctx.Request.SetRequestURI("/instances")
+	ctx.Request.SetBody([]byte(`{
+		"name":"inst-rewrite-image-runtime",
+		"namespace":"disaster-system",
+		"config":"cfg-1",
+		"namespaces":["demo-ns"],
+		"restorePolicy":{
+			"useUnifiedDirectionResolver":true,
+			"bulkModifierActions":[
+				{
+					"id":"rewrite-primary-registry",
+					"action":"rewriteImage",
+					"enabled":true,
+					"applyTo":["resourceSync","drill"],
+					"directionPolicy":"Auto",
+					"imageRewrite":{
+						"sourcePrefix":"10.11.11.1:5000/",
+						"targetPrefix":"registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/",
+						"unmatchedPolicy":"Keep",
+						"digestPolicy":"Preserve"
+					}
+				}
+			]
+		}
+	}`))
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.createInstance(context.Background(), ctx)
+	assert.Equal(t, consts.StatusCreated, ctx.Response.StatusCode(), string(ctx.Response.Body()))
+
+	created, err := h.DisasterClient.DisasterV1().DisasterInstances(ns).Get(context.Background(), "inst-rewrite-image-runtime", metav1.GetOptions{})
+	assert.NoError(t, err)
+	if assert.NotNil(t, created.Spec.RestorePolicy) {
+		if assert.Len(t, created.Spec.RestorePolicy.BulkModifierActions, 1) {
+			action := created.Spec.RestorePolicy.BulkModifierActions[0]
+			assert.Equal(t, dapisv1.BulkModifierActionRewriteImage, action.Action)
+			assert.Equal(t, []dapisv1.RestoreModifierApplyTarget{dapisv1.RestoreModifierApplyResourceSync, dapisv1.RestoreModifierApplyDrill}, action.ApplyTo)
+			if assert.NotNil(t, action.ImageRewrite) {
+				assert.Equal(t, "10.11.11.1:5000/", action.ImageRewrite.SourcePrefix)
+				assert.Equal(t, "registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/", action.ImageRewrite.TargetPrefix)
+				assert.Equal(t, dapisv1.ImageRewriteUnmatchedPolicyKeep, action.ImageRewrite.UnmatchedPolicy)
+				assert.Equal(t, dapisv1.ImageRewriteDigestPolicyPreserve, action.ImageRewrite.DigestPolicy)
+			}
+		}
+		assert.Empty(t, created.Spec.RestorePolicy.ModifierRuleSnapshot)
+		assert.Empty(t, created.Spec.RestorePolicy.ModifierRuleSnapshotHash)
+	}
+}
+
+func TestCreateInstance_WithRewriteImageMissingPrefixReturnsBadRequest(t *testing.T) {
+	cfg := &dapisv1.DisasterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cfg-1"},
+	}
+	h := newMockHandler(cfg)
+
+	ctx := app.NewContext(16)
+	ctx.Request.SetRequestURI("/instances")
+	ctx.Request.SetBody([]byte(`{
+		"name":"inst-rewrite-image-invalid",
+		"namespace":"disaster-system",
+		"config":"cfg-1",
+		"restorePolicy":{
+			"bulkModifierActions":[
+				{
+					"id":"rewrite-primary-registry",
+					"action":"rewriteImage",
+					"imageRewrite":{
+						"targetPrefix":"registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/"
+					}
+				}
+			]
+		}
+	}`))
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.createInstance(context.Background(), ctx)
+	assert.Equal(t, consts.StatusBadRequest, ctx.Response.StatusCode())
+	assert.Contains(t, string(ctx.Response.Body()), "ModifierRuleRejected")
+	assert.Contains(t, string(ctx.Response.Body()), "imageRewrite.sourcePrefix is required")
+}
+
+func TestCreateInstance_BulkModifierImageReplacementSkipsForbiddenPodStatusPath(t *testing.T) {
+	ns := "disaster-system"
+	cfg := &dapisv1.DisasterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cfg-1"},
+	}
+	h := newMockHandler(cfg)
+	h.BuildBulkModifierSnapshotFunc = func(_ context.Context, spec *dapisv1.DisasterInstanceSpec, _ *rest.Config) (*bulkModifierSnapshotBuildResult, error) {
+		return bulkImageReplacementSnapshotBuildResultForTest(t, spec), nil
+	}
+
+	ctx := app.NewContext(16)
+	ctx.Request.SetRequestURI("/instances")
+	ctx.Request.SetBody([]byte(`{
+		"name":"inst-bulk-image-skip-status",
+		"namespace":"disaster-system",
+		"config":"cfg-1",
+		"restorePolicy":{
+			"useUnifiedDirectionResolver":true,
+			"bulkModifierActions":[
+				{
+					"id":"replace-bkcmdb-synchronizer-image",
+					"action":"replaceExactValue",
+					"sourceValue":"10.11.11.1:5000/blueking/bcs-bkcmdb-synchronizer:v1.30.0",
+					"targetValue":"registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/blueking/bcs-bkcmdb-synchronizer:v1.30.0"
+				}
+			]
+		}
+	}`))
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.createInstance(context.Background(), ctx)
+	assert.Equal(t, consts.StatusCreated, ctx.Response.StatusCode(), string(ctx.Response.Body()))
+	assert.NotContains(t, string(ctx.Response.Body()), "/status/containerStatuses/0/image")
+
+	created, err := h.DisasterClient.DisasterV1().DisasterInstances(ns).Get(context.Background(), "inst-bulk-image-skip-status", metav1.GetOptions{})
+	assert.NoError(t, err)
+	assertBulkImageReplacementSnapshotSkipsStatusPath(t, created.Spec.RestorePolicy)
+}
+
 func TestCreateInstance_WithDisabledBulkModifierActionsSkipsSnapshotBuild(t *testing.T) {
 	cfg := &dapisv1.DisasterConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "cfg-1"},
@@ -1816,6 +1948,55 @@ func TestUpdateInstance_UpdatesRestorePolicyBulkModifierActionsText(t *testing.T
 	}
 }
 
+func TestUpdateInstance_BulkModifierImageReplacementSkipsForbiddenPodStatusPath(t *testing.T) {
+	ns := "disaster-system"
+	inst := &dapisv1.DisasterInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "inst-update-bulk-image-skip-status",
+			Namespace: ns,
+			UID:       types.UID("uid-update-bulk-image-skip-status"),
+		},
+		Spec: dapisv1.DisasterInstanceSpec{
+			Config: "cfg-1",
+		},
+	}
+	cfg := &dapisv1.DisasterConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cfg-1",
+		},
+	}
+	h := newMockHandler(inst, cfg)
+	h.BuildBulkModifierSnapshotFunc = func(_ context.Context, spec *dapisv1.DisasterInstanceSpec, _ *rest.Config) (*bulkModifierSnapshotBuildResult, error) {
+		return bulkImageReplacementSnapshotBuildResultForTest(t, spec), nil
+	}
+
+	ctx := app.NewContext(16)
+	ctx.Request.SetRequestURI("/instances/inst-update-bulk-image-skip-status?namespace=disaster-system")
+	ctx.Params = param.Params{{Key: "name", Value: "inst-update-bulk-image-skip-status"}}
+	ctx.Request.SetBody([]byte(`{
+		"restorePolicy":{
+			"useUnifiedDirectionResolver":true,
+			"bulkModifierActions":[
+				{
+					"id":"replace-bkcmdb-synchronizer-image",
+					"action":"replaceExactValue",
+					"sourceValue":"10.11.11.1:5000/blueking/bcs-bkcmdb-synchronizer:v1.30.0",
+					"targetValue":"registry-test.xxx.xxx.com:30088/dr_images/10_11_11_1_5000/blueking/bcs-bkcmdb-synchronizer:v1.30.0"
+				}
+			]
+		}
+	}`))
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.updateInstance(context.Background(), ctx)
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode(), string(ctx.Response.Body()))
+	assert.NotContains(t, string(ctx.Response.Body()), "/status/containerStatuses/0/image")
+
+	updated, err := h.DisasterClient.DisasterV1().DisasterInstances(ns).Get(context.Background(), "inst-update-bulk-image-skip-status", metav1.GetOptions{})
+	assert.NoError(t, err)
+	assertBulkImageReplacementSnapshotSkipsStatusPath(t, updated.Spec.RestorePolicy)
+}
+
 func TestUpdateInstance_WithInvalidModifierRulesTextReturnsBadRequest(t *testing.T) {
 	ns := "disaster-system"
 	inst := &dapisv1.DisasterInstance{
@@ -2285,6 +2466,85 @@ func restoreModifierSnapshotHasPatchPath(rules []dapisv1.RestoreModifierRule, pa
 		}
 	}
 	return false
+}
+
+func bulkImageReplacementSnapshotBuildResultForTest(t *testing.T, spec *dapisv1.DisasterInstanceSpec) *bulkModifierSnapshotBuildResult {
+	t.Helper()
+
+	if spec == nil || spec.RestorePolicy == nil {
+		t.Fatalf("expected restorePolicy for bulk image replacement snapshot")
+	}
+	const sourceImage = "10.11.11.1:5000/blueking/bcs-bkcmdb-synchronizer:v1.30.0"
+	result, err := buildBulkModifierSnapshotFromResources(spec, spec.RestorePolicy.BulkModifierActions, []bulkScannedResource{
+		{
+			GroupResource: "deployments.apps",
+			Namespace:     "demo-ns",
+			Name:          "bkcmdb",
+			Object: map[string]any{
+				"spec": map[string]any{
+					"template": map[string]any{
+						"spec": map[string]any{
+							"containers": []any{
+								map[string]any{
+									"name":  "synchronizer",
+									"image": sourceImage,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			GroupResource: "pods",
+			Namespace:     "demo-ns",
+			Name:          "bkcmdb-pod",
+			Object: map[string]any{
+				"spec": map[string]any{
+					"containers": []any{
+						map[string]any{
+							"name":  "synchronizer",
+							"image": sourceImage,
+						},
+					},
+				},
+				"status": map[string]any{
+					"containerStatuses": []any{
+						map[string]any{
+							"name":  "synchronizer",
+							"image": sourceImage,
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected bulk image replacement snapshot build success, got %v", err)
+	}
+	return result
+}
+
+func assertBulkImageReplacementSnapshotSkipsStatusPath(t *testing.T, policy *dapisv1.RestorePolicy) {
+	t.Helper()
+
+	if !assert.NotNil(t, policy) {
+		return
+	}
+	assert.Len(t, policy.ModifierRuleSnapshot, 2)
+
+	paths := make(map[string]struct{}, len(policy.ModifierRuleSnapshot))
+	for _, rule := range policy.ModifierRuleSnapshot {
+		if !assert.NotNil(t, rule.Pair) {
+			continue
+		}
+		assert.NotContains(t, rule.Pair.Path, "/status/")
+		paths[rule.Conditions.GroupResource+"|"+rule.Pair.Path] = struct{}{}
+	}
+	assert.Contains(t, paths, "deployments.apps|/spec/template/spec/containers/0/image")
+	assert.Contains(t, paths, "pods|/spec/containers/0/image")
+	assert.NotContains(t, paths, "pods|/status/containerStatuses/0/image")
+	assert.NotEmpty(t, policy.ModifierRuleSnapshotHash)
 }
 
 func TestUpdateInstance_AllowsOwnProtectedNamespaces(t *testing.T) {
