@@ -80,6 +80,10 @@ func NewRouter(sh *server.Hertz, kc kube.KubeClient) {
 	apiPublicPath.Use(recovery.Recovery())
 	apiPublicPath.Use(middleware.TraceMiddleware())
 
+	apisPublicPath := sh.Group("/apis")
+	apisPublicPath.Use(recovery.Recovery())
+	apisPublicPath.Use(middleware.TraceMiddleware())
+
 	minioStorage := storage.NewMinIOStorage()
 
 	handler := []RegisterInterface{
@@ -106,6 +110,8 @@ func NewRouter(sh *server.Hertz, kc kube.KubeClient) {
 	for _, h := range handler {
 		h.Register()
 	}
+
+	appbackupv1.NewAppBackupHandler(&kc, apisPublicPath, minioStorage).RegisterDownloadStream()
 
 	// Alias path for clients that use /api prefix instead of /apis.
 	deletioncheckv1.NewDeletionCheckHandler(&kc, apiPath).Register()

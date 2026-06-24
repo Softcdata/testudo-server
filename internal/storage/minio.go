@@ -69,6 +69,40 @@ func (s *MinIOStorage) GetDownloadURL(ctx context.Context, endpoint, accessKey, 
 	return req.URL, nil
 }
 
+func (s *MinIOStorage) GetObject(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey, rangeHeader string) (*ObjectStream, error) {
+	client, err := s.newS3Client(ctx, endpoint, accessKey, secretKey, region, addressingStyle, caBundle)
+	if err != nil {
+		return nil, err
+	}
+
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(objectKey),
+	}
+	if strings.TrimSpace(rangeHeader) != "" {
+		input.Range = aws.String(strings.TrimSpace(rangeHeader))
+	}
+
+	resp, err := client.GetObject(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Body == nil {
+		return nil, fmt.Errorf("object %s has empty body", objectKey)
+	}
+
+	return &ObjectStream{
+		Body:          resp.Body,
+		Size:          aws.ToInt64(resp.ContentLength),
+		ContentType:   aws.ToString(resp.ContentType),
+		ContentRange:  aws.ToString(resp.ContentRange),
+		AcceptRanges:  aws.ToString(resp.AcceptRanges),
+		ETag:          aws.ToString(resp.ETag),
+		LastModified:  aws.ToTime(resp.LastModified),
+		ContentLength: aws.ToInt64(resp.ContentLength),
+	}, nil
+}
+
 func (s *MinIOStorage) ListObjects(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, prefixes []string) ([]ObjectInfo, error) {
 	client, err := s.newS3Client(ctx, endpoint, accessKey, secretKey, region, addressingStyle, caBundle)
 	if err != nil {

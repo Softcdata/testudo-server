@@ -1245,15 +1245,30 @@
 ## GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download
 
 - RunAPI Target ID：`1bd135d66a001001`
-- RunAPI 状态：已存在，已更新详细说明，URL 已从具体样例名称规范为 `{{baseurl}}/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download`，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，已补齐 `Authorization` header、path `name/backupName` 参数、`type` query、resource/data/all 当前响应示例和 400/401/404/500 响应示例，原说明已保留到 `## 原有说明`，已回读验证
+- RunAPI 状态：已存在，2026-06-17 已更新为平台代理下载签发语义，URL 保持 `{{baseurl}}/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download`，鉴权类型为继承项目鉴权，已补齐 `Authorization` header、path `name/backupName` 参数、`type` query、平台代理下载地址响应示例和 400/401/404/500 响应语义；旧 S3 预签名 URL 和 `files[]` 文件列表说明已保留到 `## 原有说明`
 - server 路由：`internal/apis/app_backup/v1/router.go`
 - server handler：`internal/apis/app_backup/v1/handler.go`，`AppBackupHandler.downloadBackup`
-- 请求链路：读取 path `name/backupName` 和 query `type` -> 空值校验 -> `Get(AppBackup)` -> 校验 `backupName` 存在于 `status.history[]` -> 校验 `spec.template.storageLocation` 非空 -> `Get(StorageRepository)` -> 可选读取 `caSecretRef` Secret 的 `ca.crt` -> `type=data/all` 分支列出对象并逐个生成预签名 URL，默认/resource 分支直接为 `<cluster>/backups/<backupName>/<backupName>.tar.gz` 生成预签名 URL -> `WriteSuccess(200)`
+- 请求链路：读取 path `name/backupName` 和 query `type` -> 空值校验 -> 规范化 `type`，仅允许 `resource/data/all`，空值默认为 `resource` -> `Get(AppBackup)` -> 校验 `backupName` 存在于 `status.history[]` -> 校验 `spec.cluster` 非空 -> 校验 `spec.template.storageLocation` 非空 -> `Get(StorageRepository)` -> 使用 AppBackup UID、StorageRepository UID、下载类型、过期时间和用户信息签发 HMAC 下载票据 -> 返回 `download_url=/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download/stream?downloadToken=...`
 - operator 链路：appbackup operator 负责创建或观测 Velero `Backup` 并维护 `status.history`；Velero 负责把资源清单、Kopia/Restic 数据写入 `StorageRepository` 对应对象存储；本接口依赖 history 和存储配置生成下载 URL
-- 下层资源链路：server 读取管理集群 AppBackup/StorageRepository/CA Secret，并连接 S3 兼容对象存储；`type=data` 列出 `<cluster>/kopia/<namespace>/` 和 `<cluster>/restic/<namespace>/`；`type=all` 额外列出 `<cluster>/backups/<backupName>/`
-- 已写入内容：五段详细说明、当前不会流式返回二进制而是返回 JSON 预签名 URL 的事实、`type` 取值、对象 key/prefix 规则、`BackupDownloadResponse` 字段、1 小时过期时间、CA Secret 和 addressingStyle 使用、当前错误分类
-- 取证备注：旧 RunAPI 说明称 `data/all` 直接返回 `application/tar+gzip` 数据流；当前代码实际调用 `ListObjects` 后返回 `data.files[]`，每个文件有独立 `download_url/key/size`；`type` 传非 `data/all` 值不会报错，会按默认 resource 生成单个 URL
-- 主要错误点：path 缺失或 storageLocation 缺失返回 `400 code=1000`；JWT 失败返回 `401`；AppBackup 不存在、history 中无该 backup、StorageRepository 不存在或 data/all 无对象返回 `404 code=3004`；查询 CR、加载 CA、列对象或生成预签名 URL 失败返回 `500 code=5000`
+- 下层资源链路：本接口不再连接对象存储、不列对象、不生成 S3 预签名 URL；对象存储读取统一延迟到 `/download/stream` 入口
+- 已写入内容：五段详细说明、当前返回平台代理同源下载地址的事实、`type` 取值、`BackupDownloadResponse` 新字段 `download_url/expires_at/mode/type/file_name/files`、1 小时过期时间、短期下载票据边界、当前错误分类
+- 取证备注：旧 RunAPI 说明称 `resource` 返回 S3 预签名 URL、`data/all` 返回 `files[]` 对象列表；当前代码返回平台 URL 且 `mode=proxy`，`data/all` 不再在签发阶段调用 `ListObjects`，前端仍可直接 `window.open(data.download_url)`
+- 主要错误点：path 缺失、`type` 非法、`spec.cluster` 缺失或 storageLocation 缺失返回 `400 code=1000`；JWT 失败返回 `401`；AppBackup 不存在、history 中无该 backup、StorageRepository 不存在返回 `404 code=3004`；查询 CR、生成下载票据失败返回 `500 code=5000`
+
+## GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download/stream
+
+- RunAPI Target ID：`1cb020de89801000`
+- RunAPI 状态：2026-06-17 新增，URL 为 `{{baseurl}}/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download/stream`，已写入五段详细说明、path `name/backupName`、query `downloadToken`、200/206 二进制流响应语义和 400/401/403/404/502/500 错误语义
+- server 路由：`internal/apis/app_backup/v1/router.go` 的 `RegisterDownloadStream()`；总路由在 `internal/router/router.go` 将该入口挂到公开 `/apis` group，依赖 `downloadToken` 自校验
+- server handler：`internal/apis/app_backup/v1/handler.go`，`AppBackupHandler.downloadBackupStream`
+- 请求链路：读取 path `name/backupName` 和 query `downloadToken` -> 校验票据格式、HMAC 签名、用途、版本、过期时间、下载类型 -> 校验票据中的 AppBackup 名称和备份名与 path 一致 -> `prepareBackupDownload` 重新读取 AppBackup/StorageRepository 并校验 history、cluster、storageLocation -> 校验 AppBackup UID、StorageRepository UID 和下载类型仍与票据一致 -> 可选读取 CA Secret -> 按下载类型进入流式输出
+- `resource` 流链路：读取对象 `<cluster>/backups/<backupName>/<backupName>.tar.gz` -> 透传 `Range` 到 S3 `GetObject` -> 返回 `application/gzip` 或对象原始 Content-Type，设置 `Content-Disposition`、`Cache-Control: no-store`、`Accept-Ranges`、`ETag`、`Last-Modified`，Range 成功时返回 `206`
+- `data/all` 流链路：`data` 列出 `<cluster>/kopia/<namespace>/` 与 `<cluster>/restic/<namespace>/`，`all` 额外包含 `<cluster>/backups/<backupName>/` -> 对列出的对象逐个 `GetObject` -> 用 `archive/tar` 通过 `io.Pipe` 生成 `application/x-tar` 响应流 -> 客户端关闭响应流时关闭 pipe 并释放已打开对象 body
+- operator 链路：appbackup operator 负责维护 `status.history` 并把 Velero 资源包与 Kopia/Restic 数据写入 StorageRepository 对象存储；本接口只读取现有对象，不触发新的备份动作
+- 下层资源链路：server 读取管理集群 AppBackup/StorageRepository/CA Secret，并连接 S3 兼容对象存储；对象读取失败映射为 `502 code=4000`
+- 已写入内容：公开 stream 路由与 `downloadToken` 自校验边界、票据资源 UID 重放保护、resource Range 支持、data/all tar 归档输出、Content-Type/Content-Disposition/Cache-Control 响应头、当前错误分类
+- 取证备注：该路由为了支持浏览器 `window.open(download_url)`，不能依赖前端显式附带 Authorization header；票据参数命名为 `downloadToken`，避免被全局 JWT query token 行为误处理
+- 主要错误点：path 或 `downloadToken` 缺失、票据类型非法、cluster/storageLocation 缺失返回 `400 code=1000`；票据过期、篡改、路径不匹配、资源 UID 不匹配返回 `403 code=2003`；AppBackup、history、StorageRepository 或对象列表不存在返回 `404 code=3004`；对象存储读取或列举失败返回 `502 code=4000`；CA Secret 和未分类内部错误返回 `500 code=5000`
 
 ## GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/history
 

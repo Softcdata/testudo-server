@@ -541,6 +541,9 @@ type BackupDownloadResponse struct {
 	DownloadURL string               `json:"download_url,omitempty"` // 下载链接 (resource 类型使用)
 	Files       []BackupFileDownload `json:"files,omitempty"`        // 文件列表 (data/all 类型使用)
 	ExpiresAt   common.LocalTime     `json:"expires_at"`             // 过期时间
+	Mode        string               `json:"mode,omitempty"`         // 下载模式，proxy 表示平台代理下载
+	Type        string               `json:"type,omitempty"`         // 下载类型：resource/data/all
+	FileName    string               `json:"file_name,omitempty"`    // 建议文件名
 }
 
 // BackupFileDownload 单个备份文件的下载信息

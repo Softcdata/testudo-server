@@ -1,12 +1,20 @@
 package appbackup
 
 import (
+	"archive/tar"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	goerrors "errors"
 	"fmt"
-	"time"
-
+	"io"
+	"mime"
+	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/common/utils"
@@ -15,6 +23,7 @@ import (
 	dapisv1 "github.com/softcdata/testudo-operator/pkg/apis/disaster/v1"
 	listers "github.com/softcdata/testudo-operator/pkg/listers/disaster/v1"
 	metadata "github.com/softcdata/testudo-operator/pkg/metadata"
+	"github.com/softcdata/testudo-server/configs"
 	velerohooks "github.com/softcdata/testudo-server/internal/apis/velero_hooks"
 	"github.com/softcdata/testudo-server/internal/common"
 	"github.com/softcdata/testudo-server/internal/i18n"
@@ -56,6 +65,11 @@ const (
 	appResourceOriginUser             = "user"
 	appResourceOriginDisasterInstance = "disaster-instance"
 	backupIncludesCacheTTL            = 5 * time.Minute
+	backupDownloadProxyExpiry         = time.Hour
+	backupDownloadDefaultType         = "resource"
+	backupDownloadTokenVersion        = 1
+	backupDownloadTokenPurpose        = "app-backup-download"
+	httpTimeFormat                    = "Mon, 02 Jan 2006 15:04:05 GMT"
 )
 
 func NewAppBackupHandler(kc *kube.KubeClient, rg *route.RouterGroup, storage storage.StorageService, mw ...app.HandlerFunc) *AppBackupHandler {
@@ -488,17 +502,117 @@ func (h *AppBackupHandler) downloadBackup(c context.Context, ctx *app.RequestCon
 		return
 	}
 
-	appBackup, err := h.DisasterClient.DisasterV1().AppBackups(common.DisasterSystemNamespace).Get(c, name, matev1.GetOptions{})
+	appBackup, repo, normalizedType, err := h.prepareBackupDownload(c, name, backupName, downloadType)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			transport.WriteError(ctx, transport.CodeNotFound, err.Error(), nil)
-			return
-		}
+		writeBackupDownloadError(ctx, err)
+		return
+	}
+
+	expiry := time.Now().Add(backupDownloadProxyExpiry)
+	token, err := h.signBackupDownloadToken(appBackup, repo, backupName, normalizedType, expiry, backupDownloadUser(ctx))
+	if err != nil {
 		transport.WriteError(ctx, transport.CodeInternalServerError, err.Error(), nil)
 		return
 	}
 
-	// Verify backup exists in history
+	resp := BackupDownloadResponse{
+		DownloadURL: h.buildBackupDownloadStreamURL(name, backupName, token),
+		ExpiresAt:   common.NewLocalTime(matev1.NewTime(expiry)),
+		Mode:        "proxy",
+		Type:        normalizedType,
+		FileName:    backupDownloadFileName(backupName, normalizedType),
+	}
+	transport.WriteSuccess(ctx, consts.StatusOK, resp, nil)
+}
+
+func (h *AppBackupHandler) downloadBackupStream(c context.Context, ctx *app.RequestContext) {
+	name := ctx.Param("name")
+	backupName := ctx.Param("backupName")
+	token := strings.TrimSpace(ctx.Query("downloadToken"))
+
+	if name == "" || backupName == "" || token == "" {
+		transport.WriteError(ctx, transport.CodeBadRequest, "downloadToken, name and backupName are required", nil)
+		return
+	}
+
+	claims, err := h.verifyBackupDownloadToken(token)
+	if err != nil {
+		transport.WriteError(ctx, transport.CodeForbidden, err.Error(), nil)
+		return
+	}
+	if claims.Name != name || claims.BackupName != backupName {
+		transport.WriteError(ctx, transport.CodeForbidden, "download token does not match request path", nil)
+		return
+	}
+
+	appBackup, repo, normalizedType, err := h.prepareBackupDownload(c, name, backupName, claims.Type)
+	if err != nil {
+		writeBackupDownloadError(ctx, err)
+		return
+	}
+	if claims.AppBackupUID != string(appBackup.UID) || claims.StorageRepositoryUID != string(repo.UID) || claims.Type != normalizedType {
+		transport.WriteError(ctx, transport.CodeForbidden, "download token does not match current resource state", nil)
+		return
+	}
+
+	caBundle, err := h.loadStorageCABundle(c, repo)
+	if err != nil {
+		transport.WriteError(ctx, transport.CodeInternalServerError, "Failed to load storage CA bundle: "+err.Error(), nil)
+		return
+	}
+
+	switch normalizedType {
+	case "resource":
+		if err := h.streamBackupResource(c, ctx, appBackup, repo, caBundle, backupName); err != nil {
+			writeBackupDownloadError(ctx, err)
+			return
+		}
+	case "data", "all":
+		if err := h.streamBackupArchive(c, ctx, appBackup, repo, caBundle, backupName, normalizedType); err != nil {
+			writeBackupDownloadError(ctx, err)
+			return
+		}
+	default:
+		transport.WriteError(ctx, transport.CodeBadRequest, fmt.Sprintf("unsupported download type %q", normalizedType), nil)
+	}
+}
+
+type backupDownloadError struct {
+	code int
+	msg  string
+}
+
+func (e *backupDownloadError) Error() string {
+	return e.msg
+}
+
+func newBackupDownloadError(code int, msg string) error {
+	return &backupDownloadError{code: code, msg: msg}
+}
+
+func writeBackupDownloadError(ctx *app.RequestContext, err error) {
+	var downloadErr *backupDownloadError
+	if goerrors.As(err, &downloadErr) {
+		transport.WriteError(ctx, downloadErr.code, downloadErr.msg, nil)
+		return
+	}
+	transport.WriteError(ctx, transport.CodeInternalServerError, err.Error(), nil)
+}
+
+func (h *AppBackupHandler) prepareBackupDownload(c context.Context, name, backupName, rawDownloadType string) (*dapisv1.AppBackup, *dapisv1.StorageRepository, string, error) {
+	downloadType, err := normalizeBackupDownloadType(rawDownloadType)
+	if err != nil {
+		return nil, nil, "", newBackupDownloadError(transport.CodeBadRequest, err.Error())
+	}
+
+	appBackup, err := h.DisasterClient.DisasterV1().AppBackups(common.DisasterSystemNamespace).Get(c, name, matev1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil, "", newBackupDownloadError(transport.CodeNotFound, err.Error())
+		}
+		return nil, nil, "", err
+	}
+
 	found := false
 	for _, rec := range appBackup.Status.History {
 		if rec.Name == backupName {
@@ -507,98 +621,289 @@ func (h *AppBackupHandler) downloadBackup(c context.Context, ctx *app.RequestCon
 		}
 	}
 	if !found {
-		transport.WriteErrorKey(ctx, transport.CodeNotFound, i18n.KeyAppBackupRecordMiss, nil, nil)
-		return
+		return nil, nil, "", newBackupDownloadError(transport.CodeNotFound, i18n.T(i18n.DefaultLocale, i18n.KeyAppBackupRecordMiss, nil))
+	}
+	if strings.TrimSpace(appBackup.Spec.Cluster) == "" {
+		return nil, nil, "", newBackupDownloadError(transport.CodeBadRequest, "AppBackup cluster is required")
 	}
 
-	// Get StorageRepository
 	storageLocation := appBackup.Spec.Template.StorageLocation
 	if storageLocation == "" {
-		transport.WriteErrorKey(ctx, transport.CodeBadRequest, i18n.KeyAppBackupStorageMiss, nil, nil)
-		return
+		return nil, nil, "", newBackupDownloadError(transport.CodeBadRequest, i18n.T(i18n.DefaultLocale, i18n.KeyAppBackupStorageMiss, nil))
 	}
 
 	repo, err := h.DisasterClient.DisasterV1().StorageRepositories(common.DisasterSystemNamespace).Get(c, storageLocation, matev1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			transport.WriteError(ctx, transport.CodeNotFound, fmt.Sprintf("StorageRepository %s not found", storageLocation), nil)
-			return
+			return nil, nil, "", newBackupDownloadError(transport.CodeNotFound, fmt.Sprintf("StorageRepository %s not found", storageLocation))
 		}
-		transport.WriteError(ctx, transport.CodeInternalServerError, err.Error(), nil)
-		return
+		return nil, nil, "", err
 	}
 
-	// Object Key Structure: <prefix>/backups/<backup-name>/<backup-name>.tar.gz
-	// The prefix is generally the Cluster name (see disaster-operator logic).
+	return appBackup, repo, downloadType, nil
+}
 
-	expiry := 1 * time.Hour
-	caBundle, err := h.loadStorageCABundle(c, repo)
+func normalizeBackupDownloadType(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", backupDownloadDefaultType:
+		return "resource", nil
+	case "data":
+		return "data", nil
+	case "all":
+		return "all", nil
+	default:
+		return "", fmt.Errorf("unsupported download type %q", value)
+	}
+}
+
+type backupDownloadTokenClaims struct {
+	Version              int    `json:"v"`
+	Purpose              string `json:"purpose"`
+	Name                 string `json:"name"`
+	BackupName           string `json:"backupName"`
+	Type                 string `json:"type"`
+	AppBackupUID         string `json:"appBackupUID"`
+	StorageRepositoryUID string `json:"storageRepositoryUID"`
+	User                 string `json:"user,omitempty"`
+	IssuedAt             int64  `json:"iat"`
+	ExpiresAt            int64  `json:"exp"`
+}
+
+func (h *AppBackupHandler) signBackupDownloadToken(appBackup *dapisv1.AppBackup, repo *dapisv1.StorageRepository, backupName, downloadType string, expiresAt time.Time, user string) (string, error) {
+	claims := backupDownloadTokenClaims{
+		Version:              backupDownloadTokenVersion,
+		Purpose:              backupDownloadTokenPurpose,
+		Name:                 appBackup.Name,
+		BackupName:           backupName,
+		Type:                 downloadType,
+		AppBackupUID:         string(appBackup.UID),
+		StorageRepositoryUID: string(repo.UID),
+		User:                 user,
+		IssuedAt:             time.Now().Unix(),
+		ExpiresAt:            expiresAt.Unix(),
+	}
+	payload, err := json.Marshal(claims)
 	if err != nil {
-		transport.WriteError(ctx, transport.CodeInternalServerError, "Failed to load storage CA bundle: "+err.Error(), nil)
-		return
+		return "", err
 	}
+	encodedPayload := base64.RawURLEncoding.EncodeToString(payload)
+	signature := signBackupDownloadTokenPayload([]byte(encodedPayload), backupDownloadSigningSecret())
+	return encodedPayload + "." + base64.RawURLEncoding.EncodeToString(signature), nil
+}
 
-	if downloadType == "data" || downloadType == "all" {
-		prefixes := make([]string, 0)
-		cluster := appBackup.Spec.Cluster
-
-		if downloadType == "all" {
-			prefixes = append(prefixes, fmt.Sprintf("%s/backups/%s/", cluster, backupName))
-		}
-
-		for _, ns := range appBackup.Spec.Template.IncludedNamespaces {
-			prefixes = append(prefixes, fmt.Sprintf("%s/kopia/%s/", cluster, ns))
-			prefixes = append(prefixes, fmt.Sprintf("%s/restic/%s/", cluster, ns))
-		}
-
-		// List all objects under the prefixes
-		objects, err := h.Storage.ListObjects(c, repo.Spec.Endpoint, repo.Spec.AccessKey, repo.Spec.SecretKey, repo.Spec.Bucket, repo.Spec.Region, repo.Spec.GetAddressingStyle(), caBundle, prefixes)
-		if err != nil {
-			transport.WriteError(ctx, transport.CodeInternalServerError, "Failed to list backup objects: "+err.Error(), nil)
-			return
-		}
-
-		if len(objects) == 0 {
-			transport.WriteError(ctx, transport.CodeNotFound, "No backup data files found for the specified prefixes", nil)
-			return
-		}
-
-		// Generate presigned URLs for each object
-		files := make([]BackupFileDownload, 0, len(objects))
-		for _, obj := range objects {
-			url, err := h.Storage.GetDownloadURL(c, repo.Spec.Endpoint, repo.Spec.AccessKey, repo.Spec.SecretKey, repo.Spec.Bucket, repo.Spec.Region, repo.Spec.GetAddressingStyle(), caBundle, obj.Key, expiry)
-			if err != nil {
-				transport.WriteError(ctx, transport.CodeInternalServerError, fmt.Sprintf("Failed to generate download URL for %s: %s", obj.Key, err.Error()), nil)
-				return
-			}
-			files = append(files, BackupFileDownload{
-				Key:         obj.Key,
-				DownloadURL: url,
-				Size:        obj.Size,
-			})
-		}
-
-		resp := BackupDownloadResponse{
-			Files:     files,
-			ExpiresAt: common.NewLocalTime(matev1.NewTime(time.Now().Add(expiry))),
-		}
-		transport.WriteSuccess(ctx, consts.StatusOK, resp, nil)
-		return
+func (h *AppBackupHandler) verifyBackupDownloadToken(token string) (*backupDownloadTokenClaims, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid download token")
 	}
+	expectedSig := signBackupDownloadTokenPayload([]byte(parts[0]), backupDownloadSigningSecret())
+	gotSig, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil || !hmac.Equal(gotSig, expectedSig) {
+		return nil, fmt.Errorf("invalid download token signature")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("invalid download token payload")
+	}
+	var claims backupDownloadTokenClaims
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, fmt.Errorf("invalid download token claims")
+	}
+	if claims.Version != backupDownloadTokenVersion || claims.Purpose != backupDownloadTokenPurpose {
+		return nil, fmt.Errorf("invalid download token purpose")
+	}
+	if time.Now().Unix() > claims.ExpiresAt {
+		return nil, fmt.Errorf("download token expired")
+	}
+	if _, err := normalizeBackupDownloadType(claims.Type); err != nil {
+		return nil, err
+	}
+	return &claims, nil
+}
 
+func signBackupDownloadTokenPayload(payload []byte, secret []byte) []byte {
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write(payload)
+	return mac.Sum(nil)
+}
+
+func backupDownloadSigningSecret() []byte {
+	if configs.Cfg != nil && strings.TrimSpace(configs.Cfg.JWT.Secret) != "" {
+		return []byte(configs.Cfg.JWT.Secret)
+	}
+	return []byte("testudo-download-token-test-secret")
+}
+
+func backupDownloadUser(ctx *app.RequestContext) string {
+	if user, ok := ctx.Get("userName"); ok {
+		if username, ok := user.(string); ok {
+			return username
+		}
+	}
+	return ""
+}
+
+func (h *AppBackupHandler) buildBackupDownloadStreamURL(name, backupName, token string) string {
+	streamPath := fmt.Sprintf(
+		"/apis/appbackups.%s/appbackups/%s/backups/%s/download/stream",
+		dapisv1.GroupVersion.String(),
+		url.PathEscape(name),
+		url.PathEscape(backupName),
+	)
+	return streamPath + "?downloadToken=" + url.QueryEscape(token)
+}
+
+func backupDownloadFileName(backupName, downloadType string) string {
+	switch downloadType {
+	case "data":
+		return backupName + "-data.tar"
+	case "all":
+		return backupName + "-all.tar"
+	default:
+		return backupName + ".tar.gz"
+	}
+}
+
+func (h *AppBackupHandler) streamBackupResource(c context.Context, ctx *app.RequestContext, appBackup *dapisv1.AppBackup, repo *dapisv1.StorageRepository, caBundle []byte, backupName string) error {
 	objectKey := fmt.Sprintf("%s/backups/%s/%s.tar.gz", appBackup.Spec.Cluster, backupName, backupName)
-
-	url, err := h.Storage.GetDownloadURL(c, repo.Spec.Endpoint, repo.Spec.AccessKey, repo.Spec.SecretKey, repo.Spec.Bucket, repo.Spec.Region, repo.Spec.GetAddressingStyle(), caBundle, objectKey, expiry)
+	object, err := h.Storage.GetObject(c, repo.Spec.Endpoint, repo.Spec.AccessKey, repo.Spec.SecretKey, repo.Spec.Bucket, repo.Spec.Region, repo.Spec.GetAddressingStyle(), caBundle, objectKey, string(ctx.Request.Header.Peek("Range")))
 	if err != nil {
-		transport.WriteError(ctx, transport.CodeInternalServerError, "Failed to generate download URL: "+err.Error(), nil)
-		return
+		return newBackupDownloadError(transport.CodeUpstreamError, "Failed to read backup object: "+err.Error())
 	}
 
-	resp := BackupDownloadResponse{
-		DownloadURL: url,
-		ExpiresAt:   common.NewLocalTime(matev1.NewTime(time.Now().Add(expiry))),
+	statusCode := consts.StatusOK
+	if object.ContentRange != "" {
+		statusCode = consts.StatusPartialContent
+		ctx.Response.Header.Set("Content-Range", object.ContentRange)
 	}
-	transport.WriteSuccess(ctx, consts.StatusOK, resp, nil)
+	if object.AcceptRanges != "" {
+		ctx.Response.Header.Set("Accept-Ranges", object.AcceptRanges)
+	} else {
+		ctx.Response.Header.Set("Accept-Ranges", "bytes")
+	}
+	if object.ETag != "" {
+		ctx.Response.Header.Set("ETag", object.ETag)
+	}
+	if !object.LastModified.IsZero() {
+		ctx.Response.Header.Set("Last-Modified", object.LastModified.UTC().Format(httpTimeFormat))
+	}
+
+	contentType := object.ContentType
+	if contentType == "" {
+		contentType = "application/gzip"
+	}
+	ctx.Response.Header.SetContentType(contentType)
+	ctx.Response.Header.Set("Content-Disposition", contentDisposition(backupDownloadFileName(backupName, "resource")))
+	ctx.Response.Header.Set("Cache-Control", "no-store")
+	ctx.Response.SetStatusCode(statusCode)
+	ctx.SetBodyStream(object.Body, responseBodySize(object.ContentLength))
+	return nil
+}
+
+func (h *AppBackupHandler) streamBackupArchive(c context.Context, ctx *app.RequestContext, appBackup *dapisv1.AppBackup, repo *dapisv1.StorageRepository, caBundle []byte, backupName, downloadType string) error {
+	prefixes := backupArchivePrefixes(appBackup, backupName, downloadType)
+	if len(prefixes) == 0 {
+		return newBackupDownloadError(transport.CodeNotFound, "No backup data prefixes found")
+	}
+	objects, err := h.Storage.ListObjects(c, repo.Spec.Endpoint, repo.Spec.AccessKey, repo.Spec.SecretKey, repo.Spec.Bucket, repo.Spec.Region, repo.Spec.GetAddressingStyle(), caBundle, prefixes)
+	if err != nil {
+		return newBackupDownloadError(transport.CodeUpstreamError, "Failed to list backup objects: "+err.Error())
+	}
+	if len(objects) == 0 {
+		return newBackupDownloadError(transport.CodeNotFound, "No backup data files found for the specified prefixes")
+	}
+
+	reader, writer := io.Pipe()
+	go func() {
+		writerErr := h.writeBackupArchive(c, writer, appBackup, repo, caBundle, objects)
+		_ = writer.CloseWithError(writerErr)
+	}()
+
+	ctx.Response.Header.SetContentType("application/x-tar")
+	ctx.Response.Header.Set("Content-Disposition", contentDisposition(backupDownloadFileName(backupName, downloadType)))
+	ctx.Response.Header.Set("Cache-Control", "no-store")
+	ctx.Response.SetStatusCode(consts.StatusOK)
+	ctx.SetBodyStream(reader, -1)
+	return nil
+}
+
+func (h *AppBackupHandler) writeBackupArchive(c context.Context, writer io.Writer, appBackup *dapisv1.AppBackup, repo *dapisv1.StorageRepository, caBundle []byte, objects []storage.ObjectInfo) error {
+	tw := tar.NewWriter(writer)
+	defer func() {
+		_ = tw.Close()
+	}()
+	for _, obj := range objects {
+		object, err := h.Storage.GetObject(c, repo.Spec.Endpoint, repo.Spec.AccessKey, repo.Spec.SecretKey, repo.Spec.Bucket, repo.Spec.Region, repo.Spec.GetAddressingStyle(), caBundle, obj.Key, "")
+		if err != nil {
+			return err
+		}
+		if object.Body == nil {
+			return fmt.Errorf("object %s has empty body", obj.Key)
+		}
+
+		size := object.ContentLength
+		if size < 0 {
+			size = obj.Size
+		}
+		header := &tar.Header{
+			Name:    backupArchiveEntryName(appBackup.Spec.Cluster, obj.Key),
+			Mode:    0600,
+			Size:    size,
+			ModTime: object.LastModified,
+		}
+		if header.ModTime.IsZero() {
+			header.ModTime = time.Now()
+		}
+		if err := tw.WriteHeader(header); err != nil {
+			_ = object.Body.Close()
+			return err
+		}
+		_, copyErr := io.Copy(tw, object.Body)
+		closeErr := object.Body.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	}
+	return nil
+}
+
+func backupArchivePrefixes(appBackup *dapisv1.AppBackup, backupName, downloadType string) []string {
+	cluster := strings.Trim(appBackup.Spec.Cluster, "/")
+	prefixes := make([]string, 0)
+	if downloadType == "all" {
+		prefixes = append(prefixes, fmt.Sprintf("%s/backups/%s/", cluster, backupName))
+	}
+	for _, ns := range appBackup.Spec.Template.IncludedNamespaces {
+		ns = strings.Trim(ns, "/")
+		if ns == "" {
+			continue
+		}
+		prefixes = append(prefixes, fmt.Sprintf("%s/kopia/%s/", cluster, ns))
+		prefixes = append(prefixes, fmt.Sprintf("%s/restic/%s/", cluster, ns))
+	}
+	return prefixes
+}
+
+func backupArchiveEntryName(cluster, key string) string {
+	name := strings.Trim(strings.TrimPrefix(key, strings.Trim(cluster, "/")+"/"), "/")
+	if name == "" {
+		return strings.Trim(key, "/")
+	}
+	return name
+}
+
+func contentDisposition(filename string) string {
+	return mime.FormatMediaType("attachment", map[string]string{"filename": filename})
+}
+
+func responseBodySize(size int64) int {
+	if size < 0 || size > int64(int(^uint(0)>>1)) {
+		return -1
+	}
+	return int(size)
 }
 
 func (h *AppBackupHandler) executeAction(c context.Context, ctx *app.RequestContext) {

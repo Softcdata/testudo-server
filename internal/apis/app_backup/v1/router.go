@@ -26,3 +26,10 @@ func (c *AppBackupHandler) Register() {
 	g.GET("/watch/appbackups", c.watchAppBackups)
 	g.GET("/watch/appbackups/:name", c.watchAppBackup)
 }
+
+func (c *AppBackupHandler) RegisterDownloadStream() {
+	path := fmt.Sprintf("appbackups.%s", v1.GroupVersion.String())
+
+	g := c.Rg.Group(path).Use(c.Mw...)
+	g.GET("/appbackups/:name/backups/:backupName/download/stream", c.downloadBackupStream)
+}

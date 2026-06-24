@@ -155,7 +155,8 @@
 | `GET` | `/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name` | `c.appBackup` | 否 | JWT（dev 环境跳过） | AppBackup、Velero Backup/Schedule |
 | `PUT` | `/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name` | `c.updateAppBackup` | 否 | JWT（dev 环境跳过） | AppBackup、Velero Backup/Schedule |
 | `POST` | `/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/actions/:type` | `c.executeAction` | 否 | JWT（dev 环境跳过） | AppBackup、Velero Backup/Schedule |
-| `GET` | `/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download` | `c.downloadBackup` | 否 | JWT（dev 环境跳过） | AppBackup、Velero Backup/Schedule |
+| `GET` | `/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download` | `c.downloadBackup` | 否 | JWT（dev 环境跳过） | AppBackup、StorageRepository、下载票据 |
+| `GET` | `/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download/stream` | `c.downloadBackupStream` | 否 | 短期 `downloadToken` | AppBackup、StorageRepository、对象存储对象流 |
 | `GET` | `/apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/history` | `c.getBackupHistory` | 否 | JWT（dev 环境跳过） | AppBackup、Velero Backup/Schedule |
 | `GET` | `/apis/appbackups.testudo.softcdata.com/v1/appbackups/clusters` | `c.getAppBackupClusters` | 否 | JWT（dev 环境跳过） | AppBackup、Velero Backup/Schedule |
 | `GET` | `/apis/appbackups.testudo.softcdata.com/v1/velero/backups/:backupName/includes` | `c.getVeleroBackupIncludes` | 否 | JWT（dev 环境跳过） | AppBackup、Velero Backup/Schedule |

@@ -3,6 +3,9 @@ package appbackup
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 	"github.com/softcdata/testudo-server/internal/common"
 	"github.com/softcdata/testudo-server/internal/kube"
 	"github.com/softcdata/testudo-server/internal/storage"
+	transport "github.com/softcdata/testudo-server/internal/transport"
 	"github.com/stretchr/testify/assert"
 	velerov1 "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,6 +31,7 @@ import (
 type MockStorage struct {
 	MockGetDownloadURL func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey string, expiry time.Duration) (string, error)
 	MockListObjects    func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, prefixes []string) ([]storage.ObjectInfo, error)
+	MockGetObject      func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey, rangeHeader string) (*storage.ObjectStream, error)
 }
 
 func (m *MockStorage) ListObjects(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, prefixes []string) ([]storage.ObjectInfo, error) {
@@ -41,6 +46,18 @@ func (m *MockStorage) GetDownloadURL(ctx context.Context, endpoint, accessKey, s
 		return m.MockGetDownloadURL(ctx, endpoint, accessKey, secretKey, bucket, region, addressingStyle, caBundle, objectKey, expiry)
 	}
 	return "http://mock-download-url", nil
+}
+
+func (m *MockStorage) GetObject(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey, rangeHeader string) (*storage.ObjectStream, error) {
+	if m.MockGetObject != nil {
+		return m.MockGetObject(ctx, endpoint, accessKey, secretKey, bucket, region, addressingStyle, caBundle, objectKey, rangeHeader)
+	}
+	return &storage.ObjectStream{
+		Body:          io.NopCloser(strings.NewReader("mock")),
+		ContentLength: int64(len("mock")),
+		Size:          int64(len("mock")),
+		ContentType:   "application/octet-stream",
+	}, nil
 }
 
 func newMockHandler(objects ...runtime.Object) (*AppBackupHandler, *MockStorage) {
@@ -336,6 +353,7 @@ func TestDownloadBackup(t *testing.T) {
 			Namespace: common.DisasterSystemNamespace,
 		},
 		Spec: dapisv1.AppBackupSpec{
+			Cluster: "test-cluster",
 			Template: velerov1.BackupSpec{
 				StorageLocation: "test-storage",
 			},
@@ -346,7 +364,7 @@ func TestDownloadBackup(t *testing.T) {
 			},
 		},
 	}
-	h, mockStorage := newMockHandler(backup)
+	h, _ := newMockHandler(backup)
 
 	// Mock Storage Repository fetching logic is missing in newMockHandler because it only mocks DisasterClient.
 	// But downloadBackup needs to fetch StorageRepository (Disaster resource).
@@ -366,19 +384,12 @@ func TestDownloadBackup(t *testing.T) {
 		},
 	}
 	// Re-init with both objects
-	h, mockStorage = newMockHandler(backup, storageRepo)
+	h, _ = newMockHandler(backup, storageRepo)
 
 	ctx := app.NewContext(16)
 	ctx.Params = param.Params{
 		{Key: "name", Value: "test-backup"},
 		{Key: "backupName", Value: "velero-backup-1"},
-	}
-
-	// Set expectation
-	mockStorage.MockGetDownloadURL = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey string, expiry time.Duration) (string, error) {
-		assert.Equal(t, "http://minio", endpoint)
-		assert.Equal(t, "backups", bucket)
-		return "http://signed-url", nil
 	}
 
 	h.downloadBackup(context.Background(), ctx)
@@ -391,7 +402,247 @@ func TestDownloadBackup(t *testing.T) {
 	}
 	err := json.Unmarshal(ctx.Response.Body(), &resp)
 	assert.NoError(t, err)
-	assert.Equal(t, "http://signed-url", resp.Data.DownloadURL)
+	assert.Contains(t, resp.Data.DownloadURL, "/appbackups/test-backup/backups/velero-backup-1/download/stream?downloadToken=")
+	assert.NotContains(t, resp.Data.DownloadURL, "http://minio")
+	assert.Equal(t, "proxy", resp.Data.Mode)
+	assert.Equal(t, "resource", resp.Data.Type)
+	assert.Equal(t, "velero-backup-1.tar.gz", resp.Data.FileName)
+}
+
+func TestDownloadBackupStream_Resource(t *testing.T) {
+	backup := &dapisv1.AppBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backup",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "appbackup-uid",
+		},
+		Spec: dapisv1.AppBackupSpec{
+			Cluster: "test-cluster",
+			Template: velerov1.BackupSpec{
+				StorageLocation: "test-storage",
+			},
+		},
+		Status: dapisv1.AppBackupStatus{
+			History: []dapisv1.BackupRecord{
+				{Name: "velero-backup-1"},
+			},
+		},
+	}
+	storageRepo := &dapisv1.StorageRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-storage",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "repo-uid",
+		},
+		Spec: dapisv1.StorageRepositorySpec{
+			Endpoint:  "http://minio",
+			AccessKey: "minio",
+			SecretKey: "minio123",
+			Bucket:    "backups",
+			Region:    "us-east-1",
+		},
+	}
+	h, mockStorage := newMockHandler(backup, storageRepo)
+
+	token, err := h.signBackupDownloadToken(backup, storageRepo, "velero-backup-1", "resource", time.Now().Add(time.Hour), "tester")
+	assert.NoError(t, err)
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{
+		{Key: "name", Value: "test-backup"},
+		{Key: "backupName", Value: "velero-backup-1"},
+	}
+	ctx.Request.URI().QueryArgs().Set("downloadToken", token)
+
+	calledGetObject := false
+	mockStorage.MockGetObject = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey, rangeHeader string) (*storage.ObjectStream, error) {
+		calledGetObject = true
+		assert.Equal(t, "test-cluster/backups/velero-backup-1/velero-backup-1.tar.gz", objectKey)
+		return &storage.ObjectStream{
+			Body:          io.NopCloser(strings.NewReader("backup-data")),
+			ContentLength: int64(len("backup-data")),
+			Size:          int64(len("backup-data")),
+			ContentType:   "application/gzip",
+		}, nil
+	}
+
+	h.downloadBackupStream(context.Background(), ctx)
+
+	assert.True(t, calledGetObject)
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, "application/gzip", string(ctx.Response.Header.ContentType()))
+	assert.Contains(t, string(ctx.Response.Header.Peek("Content-Disposition")), "velero-backup-1.tar.gz")
+	body, err := io.ReadAll(ctx.Response.BodyStream())
+	assert.NoError(t, err)
+	assert.Equal(t, "backup-data", string(body))
+}
+
+func TestDownloadBackup_HistoryNotFound(t *testing.T) {
+	backup := &dapisv1.AppBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backup",
+			Namespace: common.DisasterSystemNamespace,
+		},
+		Spec: dapisv1.AppBackupSpec{
+			Cluster: "test-cluster",
+			Template: velerov1.BackupSpec{
+				StorageLocation: "test-storage",
+			},
+		},
+		Status: dapisv1.AppBackupStatus{
+			History: []dapisv1.BackupRecord{
+				{Name: "other-backup"},
+			},
+		},
+	}
+	storageRepo := &dapisv1.StorageRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-storage",
+			Namespace: common.DisasterSystemNamespace,
+		},
+		Spec: dapisv1.StorageRepositorySpec{
+			Endpoint: "http://minio",
+			Bucket:   "backups",
+		},
+	}
+	h, mockStorage := newMockHandler(backup, storageRepo)
+
+	calledGetObject := false
+	mockStorage.MockGetObject = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey, rangeHeader string) (*storage.ObjectStream, error) {
+		calledGetObject = true
+		return nil, nil
+	}
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{
+		{Key: "name", Value: "test-backup"},
+		{Key: "backupName", Value: "missing-backup"},
+	}
+
+	h.downloadBackup(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusNotFound, ctx.Response.StatusCode())
+	assert.False(t, calledGetObject)
+}
+
+func TestDownloadBackupStream_InvalidOrExpiredToken(t *testing.T) {
+	backup := &dapisv1.AppBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backup",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "appbackup-uid",
+		},
+		Spec: dapisv1.AppBackupSpec{
+			Cluster: "test-cluster",
+			Template: velerov1.BackupSpec{
+				StorageLocation: "test-storage",
+			},
+		},
+		Status: dapisv1.AppBackupStatus{
+			History: []dapisv1.BackupRecord{
+				{Name: "velero-backup-1"},
+			},
+		},
+	}
+	storageRepo := &dapisv1.StorageRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-storage",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "repo-uid",
+		},
+		Spec: dapisv1.StorageRepositorySpec{
+			Endpoint: "http://minio",
+			Bucket:   "backups",
+		},
+	}
+	h, mockStorage := newMockHandler(backup, storageRepo)
+	expiredToken, err := h.signBackupDownloadToken(backup, storageRepo, "velero-backup-1", "resource", time.Now().Add(-time.Hour), "tester")
+	assert.NoError(t, err)
+
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{name: "tampered", token: expiredToken + "tampered"},
+		{name: "expired", token: expiredToken},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calledGetObject := false
+			mockStorage.MockGetObject = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey, rangeHeader string) (*storage.ObjectStream, error) {
+				calledGetObject = true
+				return nil, nil
+			}
+
+			ctx := app.NewContext(16)
+			ctx.Params = param.Params{
+				{Key: "name", Value: "test-backup"},
+				{Key: "backupName", Value: "velero-backup-1"},
+			}
+			ctx.Request.URI().QueryArgs().Set("downloadToken", tt.token)
+
+			h.downloadBackupStream(context.Background(), ctx)
+
+			assert.Equal(t, consts.StatusForbidden, ctx.Response.StatusCode())
+			assert.False(t, calledGetObject)
+		})
+	}
+}
+
+func TestDownloadBackupStream_ObjectStoreFailure(t *testing.T) {
+	backup := &dapisv1.AppBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backup",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "appbackup-uid",
+		},
+		Spec: dapisv1.AppBackupSpec{
+			Cluster: "test-cluster",
+			Template: velerov1.BackupSpec{
+				StorageLocation: "test-storage",
+			},
+		},
+		Status: dapisv1.AppBackupStatus{
+			History: []dapisv1.BackupRecord{
+				{Name: "velero-backup-1"},
+			},
+		},
+	}
+	storageRepo := &dapisv1.StorageRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-storage",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "repo-uid",
+		},
+		Spec: dapisv1.StorageRepositorySpec{
+			Endpoint: "http://minio",
+			Bucket:   "backups",
+		},
+	}
+	h, mockStorage := newMockHandler(backup, storageRepo)
+	token, err := h.signBackupDownloadToken(backup, storageRepo, "velero-backup-1", "resource", time.Now().Add(time.Hour), "tester")
+	assert.NoError(t, err)
+
+	mockStorage.MockGetObject = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey, rangeHeader string) (*storage.ObjectStream, error) {
+		return nil, errors.New("object storage unavailable")
+	}
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{
+		{Key: "name", Value: "test-backup"},
+		{Key: "backupName", Value: "velero-backup-1"},
+	}
+	ctx.Request.URI().QueryArgs().Set("downloadToken", token)
+
+	h.downloadBackupStream(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusBadGateway, ctx.Response.StatusCode())
+	var resp struct {
+		Code int `json:"code"`
+	}
+	err = json.Unmarshal(ctx.Response.Body(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, transport.CodeUpstreamError, resp.Code)
 }
 
 func TestExecuteAction_Delete_WithTarget(t *testing.T) {
@@ -539,24 +790,15 @@ func TestDownloadBackup_Data(t *testing.T) {
 	calledList := false
 	mockStorage.MockListObjects = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, prefixes []string) ([]storage.ObjectInfo, error) {
 		calledList = true
-		assert.Contains(t, prefixes, "test-cluster/kopia/ns1/")
-		assert.Contains(t, prefixes, "test-cluster/restic/ns1/")
-		assert.Contains(t, prefixes, "test-cluster/kopia/ns2/")
-		assert.Contains(t, prefixes, "test-cluster/restic/ns2/")
-		assert.NotContains(t, prefixes, "test-cluster/backups/velero-backup-1/")
 		return []storage.ObjectInfo{
 			{Key: "test-cluster/kopia/ns1/data.bin", Size: 1024},
 			{Key: "test-cluster/restic/ns2/snapshot.dat", Size: 2048},
 		}, nil
 	}
 
-	mockStorage.MockGetDownloadURL = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey string, expiry time.Duration) (string, error) {
-		return "http://signed-url/" + objectKey, nil
-	}
-
 	h.downloadBackup(context.Background(), ctx)
 
-	assert.True(t, calledList)
+	assert.False(t, calledList)
 	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
 
 	var resp struct {
@@ -564,10 +806,227 @@ func TestDownloadBackup_Data(t *testing.T) {
 	}
 	err := json.Unmarshal(ctx.Response.Body(), &resp)
 	assert.NoError(t, err)
-	assert.Len(t, resp.Data.Files, 2)
-	assert.Equal(t, "test-cluster/kopia/ns1/data.bin", resp.Data.Files[0].Key)
-	assert.Equal(t, int64(1024), resp.Data.Files[0].Size)
-	assert.Contains(t, resp.Data.Files[0].DownloadURL, "signed-url")
+	assert.Empty(t, resp.Data.Files)
+	assert.Contains(t, resp.Data.DownloadURL, "/appbackups/test-backup/backups/velero-backup-1/download/stream?downloadToken=")
+	assert.NotContains(t, resp.Data.DownloadURL, "http://minio")
+	assert.Equal(t, "proxy", resp.Data.Mode)
+	assert.Equal(t, "data", resp.Data.Type)
+	assert.Equal(t, "velero-backup-1-data.tar", resp.Data.FileName)
+}
+
+func TestDownloadBackupStream_DataTar(t *testing.T) {
+	backup := &dapisv1.AppBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backup",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "appbackup-uid",
+		},
+		Spec: dapisv1.AppBackupSpec{
+			Cluster: "test-cluster",
+			Template: velerov1.BackupSpec{
+				StorageLocation:    "test-storage",
+				IncludedNamespaces: []string{"ns1"},
+			},
+		},
+		Status: dapisv1.AppBackupStatus{
+			History: []dapisv1.BackupRecord{
+				{Name: "velero-backup-1"},
+			},
+		},
+	}
+	storageRepo := &dapisv1.StorageRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-storage",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "repo-uid",
+		},
+		Spec: dapisv1.StorageRepositorySpec{
+			Endpoint:  "http://minio",
+			AccessKey: "minio",
+			SecretKey: "minio123",
+			Bucket:    "backups",
+			Region:    "us-east-1",
+		},
+	}
+	h, mockStorage := newMockHandler(backup, storageRepo)
+	token, err := h.signBackupDownloadToken(backup, storageRepo, "velero-backup-1", "data", time.Now().Add(time.Hour), "tester")
+	assert.NoError(t, err)
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{
+		{Key: "name", Value: "test-backup"},
+		{Key: "backupName", Value: "velero-backup-1"},
+	}
+	ctx.Request.URI().QueryArgs().Set("downloadToken", token)
+
+	mockStorage.MockListObjects = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, prefixes []string) ([]storage.ObjectInfo, error) {
+		assert.Contains(t, prefixes, "test-cluster/kopia/ns1/")
+		assert.Contains(t, prefixes, "test-cluster/restic/ns1/")
+		assert.NotContains(t, prefixes, "test-cluster/backups/velero-backup-1/")
+		return []storage.ObjectInfo{
+			{Key: "test-cluster/kopia/ns1/data.bin", Size: int64(len("payload"))},
+		}, nil
+	}
+	mockStorage.MockGetObject = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey, rangeHeader string) (*storage.ObjectStream, error) {
+		assert.Equal(t, "test-cluster/kopia/ns1/data.bin", objectKey)
+		return &storage.ObjectStream{
+			Body:          io.NopCloser(strings.NewReader("payload")),
+			ContentLength: int64(len("payload")),
+			Size:          int64(len("payload")),
+		}, nil
+	}
+
+	h.downloadBackupStream(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, "application/x-tar", string(ctx.Response.Header.ContentType()))
+	body, err := io.ReadAll(ctx.Response.BodyStream())
+	assert.NoError(t, err)
+	assert.Contains(t, string(body), "kopia/ns1/data.bin")
+	assert.Contains(t, string(body), "payload")
+}
+
+func TestDownloadBackupStream_DataEmptyObjects(t *testing.T) {
+	backup := &dapisv1.AppBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backup",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "appbackup-uid",
+		},
+		Spec: dapisv1.AppBackupSpec{
+			Cluster: "test-cluster",
+			Template: velerov1.BackupSpec{
+				StorageLocation:    "test-storage",
+				IncludedNamespaces: []string{"ns1"},
+			},
+		},
+		Status: dapisv1.AppBackupStatus{
+			History: []dapisv1.BackupRecord{
+				{Name: "velero-backup-1"},
+			},
+		},
+	}
+	storageRepo := &dapisv1.StorageRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-storage",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "repo-uid",
+		},
+		Spec: dapisv1.StorageRepositorySpec{
+			Endpoint: "http://minio",
+			Bucket:   "backups",
+		},
+	}
+	h, mockStorage := newMockHandler(backup, storageRepo)
+	token, err := h.signBackupDownloadToken(backup, storageRepo, "velero-backup-1", "data", time.Now().Add(time.Hour), "tester")
+	assert.NoError(t, err)
+
+	calledGetObject := false
+	mockStorage.MockListObjects = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, prefixes []string) ([]storage.ObjectInfo, error) {
+		return nil, nil
+	}
+	mockStorage.MockGetObject = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey, rangeHeader string) (*storage.ObjectStream, error) {
+		calledGetObject = true
+		return nil, nil
+	}
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{
+		{Key: "name", Value: "test-backup"},
+		{Key: "backupName", Value: "velero-backup-1"},
+	}
+	ctx.Request.URI().QueryArgs().Set("downloadToken", token)
+
+	h.downloadBackupStream(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusNotFound, ctx.Response.StatusCode())
+	assert.False(t, calledGetObject)
+}
+
+type trackingReadCloser struct {
+	reader *strings.Reader
+	closed chan struct{}
+}
+
+func (r *trackingReadCloser) Read(p []byte) (int, error) {
+	return r.reader.Read(p)
+}
+
+func (r *trackingReadCloser) Close() error {
+	select {
+	case <-r.closed:
+	default:
+		close(r.closed)
+	}
+	return nil
+}
+
+func TestDownloadBackupStream_DataClientCloseClosesObject(t *testing.T) {
+	backup := &dapisv1.AppBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backup",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "appbackup-uid",
+		},
+		Spec: dapisv1.AppBackupSpec{
+			Cluster: "test-cluster",
+			Template: velerov1.BackupSpec{
+				StorageLocation:    "test-storage",
+				IncludedNamespaces: []string{"ns1"},
+			},
+		},
+		Status: dapisv1.AppBackupStatus{
+			History: []dapisv1.BackupRecord{
+				{Name: "velero-backup-1"},
+			},
+		},
+	}
+	storageRepo := &dapisv1.StorageRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-storage",
+			Namespace: common.DisasterSystemNamespace,
+			UID:       "repo-uid",
+		},
+		Spec: dapisv1.StorageRepositorySpec{
+			Endpoint: "http://minio",
+			Bucket:   "backups",
+		},
+	}
+	h, mockStorage := newMockHandler(backup, storageRepo)
+	token, err := h.signBackupDownloadToken(backup, storageRepo, "velero-backup-1", "data", time.Now().Add(time.Hour), "tester")
+	assert.NoError(t, err)
+
+	bodyClosed := make(chan struct{})
+	mockStorage.MockListObjects = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, prefixes []string) ([]storage.ObjectInfo, error) {
+		return []storage.ObjectInfo{
+			{Key: "test-cluster/kopia/ns1/data.bin", Size: int64(len("payload"))},
+		}, nil
+	}
+	mockStorage.MockGetObject = func(ctx context.Context, endpoint, accessKey, secretKey, bucket, region string, addressingStyle dapisv1.StorageRepositoryAddressingStyle, caBundle []byte, objectKey, rangeHeader string) (*storage.ObjectStream, error) {
+		return &storage.ObjectStream{
+			Body:          &trackingReadCloser{reader: strings.NewReader("payload"), closed: bodyClosed},
+			ContentLength: int64(len("payload")),
+			Size:          int64(len("payload")),
+		}, nil
+	}
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{
+		{Key: "name", Value: "test-backup"},
+		{Key: "backupName", Value: "velero-backup-1"},
+	}
+	ctx.Request.URI().QueryArgs().Set("downloadToken", token)
+
+	h.downloadBackupStream(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	assert.True(t, ctx.Response.IsBodyStream())
+	assert.NoError(t, ctx.Response.CloseBodyStream())
+	select {
+	case <-bodyClosed:
+	case <-time.After(time.Second):
+		t.Fatal("expected object body to be closed after client closes stream")
+	}
 }
 
 func TestCreateAppBackup_WithScopedClusterFields(t *testing.T) {

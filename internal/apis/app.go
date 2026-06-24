@@ -23,6 +23,11 @@ type ApiServer struct {
 
 func (a *ApiServer) Run() error {
 	s := server.New(a.ServerOption...)
+	// Hertz's websocket upgrader uses hijacked connections. Keep the hijacked
+	// connection owned by the websocket handler and avoid reusing its wrapper
+	// while background watch goroutines are shutting down.
+	s.KeepHijackedConns = true
+	s.NoHijackConnPool = true
 
 	s.Use(a.GlobalMiddleware...)
 

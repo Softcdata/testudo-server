@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -69,20 +70,80 @@ func StreamWatch(c context.Context, ctx *app.RequestContext, watcherFunc Watcher
 	err := upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
 		defer conn.Close()
 
+		// 创建一个 context 用于优雅关闭
+		watchCtx, cancel := context.WithTimeout(c, opt.Timeout)
+		done := make(chan struct{})
+		var stopOnce sync.Once
+		stop := func() {
+			stopOnce.Do(func() {
+				cancel()
+				close(done)
+			})
+		}
+		defer stop()
+
 		// 互斥锁保护 WebSocket 写入操作，防止并发写入 panic
 		var writeMu sync.Mutex
 
 		// 线程安全的写入辅助函数
-		safeWrite := func(data interface{}, meta interface{}) error {
+		safeWrite := func(data interface{}, meta interface{}) (err error) {
+			select {
+			case <-done:
+				return context.Canceled
+			default:
+			}
+
 			writeMu.Lock()
 			defer writeMu.Unlock()
-			return sendSuccess(ctx, conn, data, meta)
+
+			select {
+			case <-done:
+				return context.Canceled
+			default:
+			}
+
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("websocket write panic: %v", r)
+					stop()
+				}
+			}()
+
+			err = sendSuccess(ctx, conn, data, meta)
+			if err != nil {
+				stop()
+			}
+			return err
 		}
 
-		safeWriteErrorKey := func(code int, key string, args map[string]any) error {
+		safeWriteErrorKey := func(code int, key string, args map[string]any) (err error) {
+			select {
+			case <-done:
+				return context.Canceled
+			default:
+			}
+
 			writeMu.Lock()
 			defer writeMu.Unlock()
-			return sendErrorKey(ctx, conn, code, key, args)
+
+			select {
+			case <-done:
+				return context.Canceled
+			default:
+			}
+
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("websocket write panic: %v", r)
+					stop()
+				}
+			}()
+
+			err = sendErrorKey(ctx, conn, code, key, args)
+			if err != nil {
+				stop()
+			}
+			return err
 		}
 
 		// 创建 watcher
@@ -96,16 +157,17 @@ func StreamWatch(c context.Context, ctx *app.RequestContext, watcherFunc Watcher
 		// 发送连接成功消息
 		safeWrite(map[string]string{"status": "connected"}, map[string]string{"type": "connected"})
 
-		// 创建一个 context 用于优雅关闭
-		watchCtx, cancel := context.WithTimeout(c, opt.Timeout)
-		defer cancel()
-
 		// 启动心跳 goroutine
 		heartbeatDone := make(chan struct{})
 		go func() {
 			ticker := time.NewTicker(opt.SendInterval)
 			defer ticker.Stop()
 			defer close(heartbeatDone)
+			defer func() {
+				if recover() != nil {
+					stop()
+				}
+			}()
 
 			for {
 				select {
@@ -118,16 +180,25 @@ func StreamWatch(c context.Context, ctx *app.RequestContext, watcherFunc Watcher
 				}
 			}
 		}()
+		defer func() {
+			stop()
+			<-heartbeatDone
+		}()
 
 		// 启动读取 goroutine（处理客户端消息，如心跳响应或控制命令）
 		readDone := make(chan struct{})
 		go func() {
 			defer close(readDone)
+			defer func() {
+				if recover() != nil {
+					stop()
+				}
+			}()
 			for {
 				// 读取客户端消息（保持连接活跃）
 				_, _, err := conn.ReadMessage()
 				if err != nil {
-					cancel() // 客户端断开，取消 context
+					stop() // 客户端断开，取消 context
 					return
 				}
 			}

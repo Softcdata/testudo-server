@@ -459,6 +459,49 @@ components:
                         type: array
                         items:
                             $ref: '#/components/schemas/BackupRecordDTO'
+        BackupDownloadResponse:
+            description: AppBackup 下载签发响应。`download_url` 指向平台服务端代理下载入口，不是对象存储地址。
+            type: object
+            properties:
+                download_url:
+                    description: 平台服务端生成的同源下载地址，包含短期 `downloadToken`。客户端可直接打开该地址完成下载。
+                    type: string
+                    example: /apis/appbackups.testudo.softcdata.com/v1/appbackups/prod-app/backups/prod-app-20260617103000/download/stream?downloadToken=eyJ2Ijox...
+                expires_at:
+                    $ref: '#/components/schemas/LocalRFC3339Time'
+                mode:
+                    description: 下载模式。当前固定为 `proxy`，表示由平台服务端代理对象存储下载。
+                    enum:
+                        - proxy
+                    type: string
+                type:
+                    description: 下载类型。`resource` 下载 Velero 资源包，`data` 下载持久卷数据归档，`all` 下载资源包与持久卷数据归档。
+                    enum:
+                        - resource
+                        - data
+                        - all
+                    type: string
+                file_name:
+                    description: 建议下载文件名。`resource` 为 `<backupName>.tar.gz`，`data` 为 `<backupName>-data.tar`，`all` 为 `<backupName>-all.tar`。
+                    type: string
+                files:
+                    description: 历史兼容字段。代理下载模式下不再返回对象存储文件列表。
+                    type: array
+                    items:
+                        type: object
+            required:
+                - download_url
+                - expires_at
+                - mode
+                - type
+                - file_name
+        BackupDownloadEnvelope:
+            allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - type: object
+                  properties:
+                    data:
+                        $ref: '#/components/schemas/BackupDownloadResponse'
         AppRestoreSpecDTO:
             description: AppRestore 对外 spec DTO。spec.hooks 回显 CRD template.hooks。
             type: object
@@ -6086,43 +6129,73 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.downloadBackup`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.downloadBackup`，用于让已登录用户获取 AppBackup 下指定 Velero 备份的平台代理下载地址。客户端不直接访问对象存储地址，而是通过平台服务端生成的下载地址进入下载流程。
 
                 ## 2. 控制哪些资源
 
                 直接操作资源：
-                - AppBackup、Velero Backup/Schedule
+                - AppBackup、StorageRepository、Velero Backup/Schedule
 
                 下层影响资源：
-                - 待逐接口查询 operator controller 后补齐。
+                - 对象存储中的 `<cluster>/backups/<backupName>/<backupName>.tar.gz`
+                - 对象存储中的 `<cluster>/kopia/<namespace>/`
+                - 对象存储中的 `<cluster>/restic/<namespace>/`
 
                 资源作用范围：
-                - 待逐接口查询 server 与 operator 调用链后补齐。
+                - 管理集群中的 AppBackup 与 StorageRepository
+                - AppBackup `spec.cluster`
+                - AppBackup `spec.template.storageLocation`
+                - AppBackup `status.history`
 
                 ## 3. 入参的详细说明
 
-                请求字段 schema 已先生成骨架，字段中文含义、可传入值、传入目的、是否必传、约束与默认值需要在逐接口阶段补齐。
+                路径参数：
+                - `name`：AppBackup 名称，必传。
+                - `backupName`：Velero 备份名称，必传，必须存在于该 AppBackup 的 `status.history` 中。
+
+                查询参数：
+                - `type`：下载类型，可选，默认 `resource`。`resource` 返回资源包代理地址，`data` 返回持久卷数据代理地址，`all` 返回完整归档代理地址。
 
                 ## 4. 返回的详细说明
 
-                返回字段 schema 已先生成统一信封骨架，具体 data 字段、字段来源、可能取值、为空条件需要在逐接口阶段补齐。
+                返回字段使用统一信封。
+                - `data.download_url`：平台服务端生成的同源下载地址，客户端应直接打开该地址完成下载，不得将其视为对象存储地址。
+                - `data.expires_at`：下载地址过期时间，当前默认 1 小时。
+                - `data.mode`：当前固定为 `proxy`。
+                - `data.type`：返回的下载类型，取值为 `resource`、`data`、`all`。
+                - `data.file_name`：建议下载文件名。
+                - `data.files`：当前不作为该接口的主要返回结构；完整归档由下载流地址处理，不再返回对象存储文件清单。
 
                 ## 5. 可能返回的错误
 
-                server 当场返回错误已先列出通用响应码，具体触发条件需要在逐接口阶段补齐。 接口成功后，operator 后续执行失败需要通过详情、列表以及事件流接口读取状态回写。
+                - `400`：路径参数缺失、`type` 非法、AppBackup 缺少 `spec.cluster`、`spec.template.storageLocation` 为空。
+                - `401`：认证失败。
+                - `403`：下载票据失效、签名不合法、票据与当前资源不匹配。
+                - `404`：AppBackup 不存在、指定历史备份不存在、StorageRepository 不存在、对象列表为空。
+                - `500`：读取 CA Secret、查询对象存储、生成下载票据或流式转发失败。
             operationId: get_apis_appbackups_testudo_softcdata_com_v1_appbackups_name_backups_backupname_download
             parameters:
-                - description: 路径参数 `name`，中文含义待逐接口调用链确认。
+                - description: 路径参数 `name`，AppBackup 名称，必传。
                   in: path
                   name: name
                   required: true
                   schema:
                     type: string
-                - description: 路径参数 `backupName`，中文含义待逐接口调用链确认。
+                - description: 路径参数 `backupName`，Velero 备份名称，必传。
                   in: path
                   name: backupName
                   required: true
                   schema:
+                    type: string
+                - description: 查询参数 `type`，下载类型，默认 `resource`，可取 `resource`、`data`、`all`。
+                  in: query
+                  name: type
+                  required: false
+                  schema:
+                    enum:
+                        - resource
+                        - data
+                        - all
                     type: string
             requestBody:
                 content:
@@ -6136,8 +6209,8 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Envelope'
-                    description: 处理成功
+                                $ref: '#/components/schemas/BackupDownloadEnvelope'
+                    description: 返回平台代理下载地址
                 "400":
                     content:
                         application/json:
@@ -6190,15 +6263,159 @@ paths:
                     - status.message
             x-controlled-resources:
                 direct:
-                    - AppBackup、Velero Backup/Schedule
+                    - AppBackup、StorageRepository、Velero Backup/Schedule
                 downstream:
-                    - 待逐接口查询 operator controller 后补齐
-                scope: 待逐接口查询 server 与 operator 调用链后补齐
+                    - 对象存储中的备份包、kopia 数据块、restic 数据块
+                scope: 管理集群与对象存储之间的下载代理链路
             x-operator-chain:
                 controller: 待逐接口确认
                 crd: 待逐接口确认
                 serverFile: internal/apis/app_backup/v1/router.go
                 serverHandler: c.downloadBackup
+            x-runapi-target-id: example-runapi-target-id
+    /apis/appbackups.testudo.softcdata.com/v1/appbackups/{name}/backups/{backupName}/download/stream:
+        get:
+            description: |-
+                ## 1. 接口用来干什么
+
+                该接口对应 server handler `c.downloadBackupStream`。它不再返回对象存储地址，而是校验 `downloadToken` 后直接从对象存储读取内容并代理给浏览器。客户端只需要打开 `/download` 返回的同源地址即可完成下载。
+
+                ## 2. 控制哪些资源
+
+                直接操作资源：
+                - AppBackup、StorageRepository、对象存储对象流
+
+                下层影响资源：
+                - 对象存储中的 `<cluster>/backups/<backupName>/<backupName>.tar.gz`
+                - 对象存储中的 `<cluster>/kopia/<namespace>/`
+                - 对象存储中的 `<cluster>/restic/<namespace>/`
+
+                资源作用范围：
+                - 管理集群中的 AppBackup 与 StorageRepository
+                - AppBackup `spec.cluster`
+                - AppBackup `spec.template.storageLocation`
+                - AppBackup `status.history`
+                - `/download` 签发的短期 `downloadToken`
+
+                ## 3. 入参的详细说明
+
+                路径参数：
+                - `name`：AppBackup 名称，必传，必须与票据中的名称一致。
+                - `backupName`：Velero 备份名称，必传，必须与票据中的备份名一致。
+
+                查询参数：
+                - `downloadToken`：短期下载票据，必传，由 `/download` 接口签发。票据携带 AppBackup 名称、备份名、下载类型、AppBackup UID、StorageRepository UID 与过期时间。
+
+                ## 4. 返回的详细说明
+
+                该接口直接返回文件流，不再返回 JSON 下载地址。
+
+                | 状态 | Content-Type | 说明 |
+                |---|---|---|
+                | `200` | `application/gzip` 或对象存储原始类型 | `type=resource` 时返回单文件代理流，响应头包含 `Content-Disposition`、`ETag`、`Last-Modified`、`Accept-Ranges`。 |
+                | `200` | `application/x-tar` | `type=data` 或 `type=all` 时返回 tar 归档流。 |
+                | `206` | `application/gzip` 或对象存储原始类型 | `type=resource` 且客户端携带 `Range` 时返回部分内容。 |
+
+                ## 5. 可能返回的错误
+
+                - `400`：路径参数缺失、`downloadToken` 缺失、票据中下载类型非法、AppBackup 缺少 `spec.cluster`、`spec.template.storageLocation` 为空。
+                - `403`：下载票据失效、签名不合法、票据与当前请求或资源不匹配。
+                - `404`：AppBackup 不存在、指定历史备份不存在、StorageRepository 不存在、对象列表为空。
+                - `502`：读取对象存储失败、读取资源包失败、读取归档条目失败。
+                - `500`：读取 CA Secret 失败或流式写出过程中发生未分类错误。
+            operationId: get_apis_appbackups_testudo_softcdata_com_v1_appbackups_name_backups_backupname_download_stream
+            parameters:
+                - description: 路径参数 `name`，AppBackup 名称，必传，必须与票据一致。
+                  in: path
+                  name: name
+                  required: true
+                  schema:
+                    type: string
+                - description: 路径参数 `backupName`，Velero 备份名称，必传，必须与票据一致。
+                  in: path
+                  name: backupName
+                  required: true
+                  schema:
+                    type: string
+                - description: 查询参数 `downloadToken`，短期下载票据，必传，由 `/download` 接口签发。
+                  in: query
+                  name: downloadToken
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GenericObject'
+                description: 该接口不使用请求体。
+                required: false
+            responses:
+                "200":
+                    content:
+                        application/gzip:
+                            schema:
+                                type: string
+                                format: binary
+                        application/x-tar:
+                            schema:
+                                type: string
+                                format: binary
+                    description: 返回代理下载文件流
+                "206":
+                    content:
+                        application/gzip:
+                            schema:
+                                type: string
+                                format: binary
+                    description: 返回资源包部分内容
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 请求参数错误
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 票据无效
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 资源不存在
+                "502":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 上游对象存储错误
+                "500":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 服务端内部错误
+            security: []
+            summary: 应用备份 GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download/stream
+            tags:
+                - 应用备份
+            x-controlled-resources:
+                direct:
+                    - AppBackup
+                    - StorageRepository
+                    - 对象存储对象流
+                downstream:
+                    - 对象存储中的备份包、kopia 数据块、restic 数据块
+                scope: 管理集群与对象存储之间的平台代理下载链路
+            x-operator-chain:
+                controller: 待逐接口确认
+                crd: 待逐接口确认
+                serverFile: internal/apis/app_backup/v1/router.go
+                serverHandler: c.downloadBackupStream
             x-runapi-target-id: example-runapi-target-id
     /apis/appbackups.testudo.softcdata.com/v1/appbackups/{name}/history:
         get:
