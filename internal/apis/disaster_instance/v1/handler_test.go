@@ -941,6 +941,36 @@ func TestCreateInstance_WithRestorePolicyAndSkipPodReadyCheck(t *testing.T) {
 	}
 }
 
+func TestCreateInstance_WithOperationTimeoutMinutes(t *testing.T) {
+	ns := "disaster-system"
+	cfg := &dapisv1.DisasterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cfg-1"},
+	}
+	h := newMockHandler(cfg)
+
+	ctx := app.NewContext(16)
+	ctx.Request.SetRequestURI("/instances")
+	ctx.Request.SetBody([]byte(`{
+		"name":"inst-timeout",
+		"namespace":"disaster-system",
+		"config":"cfg-1",
+		"operationTimeoutMinutes":240
+	}`))
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.createInstance(context.Background(), ctx)
+	assert.Equal(t, consts.StatusCreated, ctx.Response.StatusCode())
+
+	created, err := h.DisasterClient.DisasterV1().DisasterInstances(ns).Get(context.Background(), "inst-timeout", metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Equal(t, int32(240), created.Spec.OperationTimeoutMinutes)
+
+	var resp getInstanceResponse
+	err = json.Unmarshal(ctx.Response.Body(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, int32(240), resp.Data.Spec.OperationTimeoutMinutes)
+}
+
 func TestCreateInstance_WithRestorePolicyModifierRules(t *testing.T) {
 	ns := "disaster-system"
 	cfg := &dapisv1.DisasterConfig{
@@ -1439,7 +1469,7 @@ func TestCreateInstance_WithBulkModifierActionsAndTextConflictReturnsBadRequest(
 	assert.Contains(t, resp.Message, "BulkModifierActionsInputConflict")
 }
 
-func TestCreateInstance_RejectsProtectedNamespaceConflict(t *testing.T) {
+func TestCreateInstance_AllowsProtectedNamespaceConflict(t *testing.T) {
 	h := newMockHandler(
 		&dapisv1.DisasterConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "cfg-old"},
@@ -1474,20 +1504,11 @@ func TestCreateInstance_RejectsProtectedNamespaceConflict(t *testing.T) {
 
 	h.createInstance(context.Background(), ctx)
 
-	assert.Equal(t, consts.StatusConflict, ctx.Response.StatusCode())
+	assert.Equal(t, consts.StatusCreated, ctx.Response.StatusCode())
 
-	var resp protectedNamespaceConflictResponse
-	err := json.Unmarshal(ctx.Response.Body(), &resp)
+	created, err := h.DisasterClient.DisasterV1().DisasterInstances("disaster-system").Get(context.Background(), "inst-new", metav1.GetOptions{})
 	assert.NoError(t, err)
-	assert.Equal(t, transport.CodeConflict, resp.Code)
-	assert.Equal(t, "protectedNamespaces", resp.Meta.ConflictType)
-	assert.Equal(t, "cluster-a", resp.Meta.SourceCluster)
-	assert.Equal(t, []string{"app-a"}, resp.Meta.ConflictNamespaces)
-	if assert.Len(t, resp.Meta.Owners, 1) {
-		assert.Equal(t, "app-a", resp.Meta.Owners[0].Namespace)
-		assert.Equal(t, "inst-old", resp.Meta.Owners[0].InstanceName)
-		assert.Equal(t, "disaster-system", resp.Meta.Owners[0].InstanceNamespace)
-	}
+	assert.Equal(t, []string{"app-a", "app-b"}, created.Spec.Namespaces)
 }
 
 func TestCreateInstance_AllowsSameNamespaceAcrossDifferentSourceClusters(t *testing.T) {
@@ -1672,8 +1693,8 @@ func TestCreateInstance_WithModifierRulesExceedingLimitReturnsBadRequest(t *test
 	}
 	h := newMockHandler(cfg)
 
-	rules := make([]map[string]any, 0, 201)
-	for i := 0; i < 201; i++ {
+	rules := make([]map[string]any, 0, maxModifierRulesPerInstance+1)
+	for i := 0; i < maxModifierRulesPerInstance+1; i++ {
 		rules = append(rules, map[string]any{
 			"id":   fmt.Sprintf("rule-%03d", i),
 			"mode": "reversible",
@@ -1847,6 +1868,45 @@ func TestUpdateInstance_UpdatesRestorePolicyAndSkipPodReadyCheck(t *testing.T) {
 		assert.Equal(t, "nginx", updated.Spec.RestorePolicy.IngressClassMapping.Mappings[0].SourceClass)
 		assert.Equal(t, "traefik", updated.Spec.RestorePolicy.IngressClassMapping.Mappings[0].TargetClass)
 	}
+}
+
+func TestUpdateInstance_UpdatesOperationTimeoutMinutes(t *testing.T) {
+	ns := "disaster-system"
+	inst := &dapisv1.DisasterInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "inst-update-timeout",
+			Namespace: ns,
+			UID:       types.UID("uid-update-timeout"),
+		},
+		Spec: dapisv1.DisasterInstanceSpec{
+			Config:                  "cfg-1",
+			OperationTimeoutMinutes: 60,
+		},
+	}
+	cfg := &dapisv1.DisasterConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cfg-1",
+		},
+	}
+	h := newMockHandler(inst, cfg)
+
+	ctx := app.NewContext(16)
+	ctx.Request.SetRequestURI("/instances/inst-update-timeout?namespace=disaster-system")
+	ctx.Params = param.Params{{Key: "name", Value: "inst-update-timeout"}}
+	ctx.Request.SetBody([]byte(`{"operationTimeoutMinutes":300}`))
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.updateInstance(context.Background(), ctx)
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+
+	updated, err := h.DisasterClient.DisasterV1().DisasterInstances(ns).Get(context.Background(), "inst-update-timeout", metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Equal(t, int32(300), updated.Spec.OperationTimeoutMinutes)
+
+	var resp getInstanceResponse
+	err = json.Unmarshal(ctx.Response.Body(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, int32(300), resp.Data.Spec.OperationTimeoutMinutes)
 }
 
 func TestUpdateInstance_UpdatesRestorePolicyModifierRulesText(t *testing.T) {
@@ -2574,7 +2634,7 @@ func TestUpdateInstance_AllowsOwnProtectedNamespaces(t *testing.T) {
 	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
 }
 
-func TestUpdateInstance_RejectsOtherProtectedNamespaces(t *testing.T) {
+func TestUpdateInstance_AllowsOtherProtectedNamespaces(t *testing.T) {
 	h := newMockHandler(
 		&dapisv1.DisasterConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "cfg-a"},
@@ -2606,17 +2666,11 @@ func TestUpdateInstance_RejectsOtherProtectedNamespaces(t *testing.T) {
 
 	h.updateInstance(context.Background(), ctx)
 
-	assert.Equal(t, consts.StatusConflict, ctx.Response.StatusCode())
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
 
-	var resp protectedNamespaceConflictResponse
-	err := json.Unmarshal(ctx.Response.Body(), &resp)
+	updated, err := h.DisasterClient.DisasterV1().DisasterInstances("disaster-system").Get(context.Background(), "inst-a", metav1.GetOptions{})
 	assert.NoError(t, err)
-	assert.Equal(t, transport.CodeConflict, resp.Code)
-	assert.Equal(t, []string{"app-b"}, resp.Meta.ConflictNamespaces)
-	if assert.Len(t, resp.Meta.Owners, 1) {
-		assert.Equal(t, "inst-b", resp.Meta.Owners[0].InstanceName)
-		assert.Equal(t, "app-b", resp.Meta.Owners[0].Namespace)
-	}
+	assert.Equal(t, []string{"app-b"}, updated.Spec.Namespaces)
 }
 
 func TestGetSyncStatus_OnlyFailedSubResourceReturnsCurrentError(t *testing.T) {

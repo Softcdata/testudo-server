@@ -1108,6 +1108,9 @@ func (h *InstanceHandler) updateInstance(c context.Context, ctx *app.RequestCont
 		if req.LabelSelector != nil {
 			existing.Spec.LabelSelector = req.LabelSelector
 		}
+		if req.OperationTimeoutMinutes != nil {
+			existing.Spec.OperationTimeoutMinutes = *req.OperationTimeoutMinutes
+		}
 		if req.PodRestoreMethod != nil {
 			existing.Spec.PodRestoreMethod = *req.PodRestoreMethod
 		}

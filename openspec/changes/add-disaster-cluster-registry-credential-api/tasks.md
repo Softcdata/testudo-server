@@ -11,7 +11,7 @@
 - [x] 2.3 将非敏感 Secret 引用写回 `Cluster.spec.veleroInstall`
 - [x] 2.4 为 detail/list API 增加 `veleroInstall.credentialConfigured` 脱敏回显
 - [x] 2.5 为 detail/list/create/patch/watch 响应补充 `veleroInstall.username` 回显，保持 `password` 不回显
-- [x] 2.6 补“创建 / 轮换 / 删除 / 显式传空清空 / 未修改保持不变 / 仅修改 imageRegistry / username 回显” handler tests
+- [x] 2.6 补“创建 / 轮换 / removeCredential 删除 / 空 password 保持不变 / 未修改保持不变 / 仅修改 imageRegistry / username 回显” handler tests
 
 ## 3. Alignment
 - [x] 3.1 与 operator 对齐 `veleroInstall` 字段命名和生命周期契约

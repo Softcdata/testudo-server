@@ -258,6 +258,347 @@ components:
             additionalProperties: true
             description: 待逐接口按 server DTO 与 operator 调用链补齐具体字段
             type: object
+        BusinessDefaultConfigField:
+            description: 业务默认配置字段条目。该结构由 server 内置字段目录和 ConfigMap 中的当前值合成，前端可以直接展示字段含义、当前值、默认值、可编辑性、生效方式和校验边界。
+            type: object
+            required:
+                - key
+                - name
+                - description
+                - value
+                - defaultValue
+                - dataType
+                - editable
+                - effectMode
+                - groupKey
+                - groupName
+            properties:
+                key:
+                    description: 字段路径，固定为 `分组.字段名`，例如 `backupRuntime.pollInterval`。PATCH 支持使用该扁平 key 直接更新。
+                    type: string
+                name:
+                    description: 页面展示名称。
+                    type: string
+                description:
+                    description: 字段含义说明，前端配置页面应直接展示该文本，不需要自行拼接说明。
+                    type: string
+                value:
+                    description: 当前生效的业务默认值。duration 使用带单位字符串，例如 `15s`、`5m`；int 使用 JSON number；bool 使用 JSON boolean。
+                    oneOf:
+                        - type: string
+                        - type: integer
+                        - type: boolean
+                defaultValue:
+                    description: 字段目录中的出厂默认值。未在 ConfigMap 中覆盖时，`value` 等于该值。
+                    oneOf:
+                        - type: string
+                        - type: integer
+                        - type: boolean
+                dataType:
+                    description: 字段值类型，决定前端控件和 PATCH 校验方式。
+                    type: string
+                    enum:
+                        - duration
+                        - int
+                        - bool
+                        - string
+                        - enum
+                        - object
+                editable:
+                    description: 是否允许通过 PATCH 接口修改。false 时字段仅展示，提交会返回 400。
+                    type: boolean
+                effectMode:
+                    description: 业务默认值被前端再次写入业务请求后的生效方式。`hot` 表示不需要重启；`restart` 表示依赖组件重启后加载；`startup` 表示只作为新建资源或启动默认值。
+                    type: string
+                    enum:
+                        - hot
+                        - restart
+                        - startup
+                min:
+                    description: 最小合法值。duration 字段使用带单位字符串，int 字段使用 number。
+                    oneOf:
+                        - type: string
+                        - type: integer
+                max:
+                    description: 最大合法值。duration 字段使用带单位字符串，int 字段使用 number。
+                    oneOf:
+                        - type: string
+                        - type: integer
+                enumValues:
+                    description: enum 字段允许值。非 enum 字段为空数组或省略。
+                    type: array
+                    items:
+                        type: string
+                groupKey:
+                    description: 字段所属分组 key，例如 `backupRuntime`。
+                    type: string
+                groupName:
+                    description: 字段所属分组展示名称。
+                    type: string
+            example:
+                key: backupRuntime.pollInterval
+                name: 备份状态轮询间隔
+                description: AppBackup 观察 Velero Backup 状态的默认重排队间隔，过小会增加 controller 负载。
+                value: 10s
+                defaultValue: 10s
+                dataType: duration
+                editable: true
+                effectMode: hot
+                min: 1s
+                max: 5m
+                enumValues: []
+                groupKey: backupRuntime
+                groupName: 备份运行时
+        BusinessDefaultConfigGroup:
+            description: 业务默认配置分组，前端可按分组直接渲染配置页面。
+            type: object
+            required:
+                - key
+                - name
+                - description
+                - fields
+            properties:
+                key:
+                    description: 分组 key，例如 `restoreRuntime`。
+                    type: string
+                name:
+                    description: 分组展示名称。
+                    type: string
+                description:
+                    description: 分组用途说明。
+                    type: string
+                fields:
+                    description: 该分组下的字段列表，字段顺序由 server 字段目录控制。
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/BusinessDefaultConfigField'
+        BusinessDefaultConfigSnapshot:
+            description: 单例业务默认配置快照。快照由 server 字段目录、ConfigMap `disaster-business-default-config` 中的覆盖值、更新时间和更新人合成。
+            type: object
+            required:
+                - schemaVersion
+                - groups
+            properties:
+                schemaVersion:
+                    description: 配置文档 schema 版本，当前为 1。
+                    type: integer
+                updatedAt:
+                    description: 最近一次通过 PATCH 成功更新后的 UTC RFC3339 时间；从未更新时为空。
+                    type: string
+                    format: date-time
+                updatedBy:
+                    description: 最近一次更新人。dev 模式未注入用户时为 `system`。
+                    type: string
+                groups:
+                    description: 配置分组列表。
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/BusinessDefaultConfigGroup'
+        BusinessDefaultConfigFieldCollection:
+            description: 业务默认配置字段集合响应 data。
+            type: object
+            required:
+                - items
+            properties:
+                items:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/BusinessDefaultConfigField'
+        BusinessDefaultConfigFrontendField:
+            description: 前端传参字段条目。该结构保留 `key/value`，并返回字段含义、请求字段层级、CRD spec 字段层级以及字段应写入的业务接口位置，前端可以直接按 `requestPathSegments` 组装请求体。
+            type: object
+            required:
+                - key
+                - value
+                - requestPathSegments
+                - specPathSegments
+                - apiUsages
+            properties:
+                key:
+                    description: 前端读取默认值并写入业务请求字段时使用的稳定 key，例如 `operation.timeoutMinutes`。
+                    type: string
+                value:
+                    description: 该 key 的默认值。duration 使用带单位字符串，int 使用 number，bool 使用 boolean，object 使用 JSON object。
+                    oneOf:
+                        - type: string
+                        - type: integer
+                        - type: boolean
+                        - type: object
+                name:
+                    description: 字段中文名称。
+                    type: string
+                description:
+                    description: 字段用途说明。
+                    type: string
+                resourceKind:
+                    description: 字段主要作用的资源类型，例如 `DisasterOperation`。
+                    type: string
+                requestPath:
+                    description: 字段在业务请求体中的点分路径，例如 `config.timeoutMinutes`。
+                    type: string
+                specPath:
+                    description: 字段最终对应的 CRD spec 点分路径，例如 `spec.timeoutMinutes`。
+                    type: string
+                configGroupKey:
+                    description: 前端字段分组 key，例如 `operation`。
+                    type: string
+                configKey:
+                    description: 前端业务默认配置 key。
+                    type: string
+                dataType:
+                    $ref: '#/components/schemas/FieldValueType'
+                editable:
+                    description: 前端是否允许编辑该业务默认值。
+                    type: boolean
+                serverSupported:
+                    description: 当前 server 业务接口是否已经解析并透传该字段。为 false 时只表示目录声明存在，提交到对应接口未必生效。
+                    type: boolean
+                supportedOperations:
+                    description: 对操作类字段生效的操作类型列表。
+                    type: array
+                    items:
+                        type: string
+                keySegments:
+                    description: key 按点拆分后的层级。
+                    type: array
+                    items:
+                        type: string
+                requestPathSegments:
+                    description: requestPath 按点拆分后的请求体层级，前端可按该数组组装 JSON。
+                    type: array
+                    items:
+                        type: string
+                specPathSegments:
+                    description: specPath 按点拆分后的 CRD spec 层级。
+                    type: array
+                    items:
+                        type: string
+                apiUsages:
+                    description: 字段应写入或触发的业务接口位置。
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/BusinessDefaultConfigFrontendFieldAPIUsage'
+                note:
+                    description: 补充说明，例如字段当前未由 server 解析。
+                    type: string
+            example:
+                key: operation.timeoutMinutes
+                value: 60
+                name: 单次操作超时
+                resourceKind: DisasterOperation
+                requestPath: config.timeoutMinutes
+                specPath: spec.timeoutMinutes
+                keySegments:
+                    - operation
+                    - timeoutMinutes
+                requestPathSegments:
+                    - config
+                    - timeoutMinutes
+                specPathSegments:
+                    - spec
+                    - timeoutMinutes
+                apiUsages:
+                    - method: POST
+                      path: /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/actions
+                      requestPath: config.timeoutMinutes
+                      requestPathSegments:
+                          - config
+                          - timeoutMinutes
+                      resourceKind: DisasterOperation
+                      operation: sync-resource
+                      description: 触发实例 sync-resource 操作时使用
+        BusinessDefaultConfigFrontendFieldAPIUsage:
+            description: 前端传参字段对应的业务接口用法。
+            type: object
+            required:
+                - method
+                - path
+            properties:
+                method:
+                    description: HTTP 方法。
+                    type: string
+                    example: POST
+                path:
+                    description: 字段应写入或触发的 server API 路径。
+                    type: string
+                    example: /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/actions
+                requestPath:
+                    description: 字段在该接口请求体中的点分路径；动作型无请求字段时为空。
+                    type: string
+                    example: config.timeoutMinutes
+                requestPathSegments:
+                    description: requestPath 拆分后的请求体层级。
+                    type: array
+                    items:
+                        type: string
+                resourceKind:
+                    description: 该接口创建或更新的主要资源类型。
+                    type: string
+                    example: DisasterOperation
+                operation:
+                    description: 操作类接口的 operation 值，例如 `sync-resource`、`failover`。
+                    type: string
+                    example: sync-resource
+                description:
+                    description: 该字段在此接口下的用途说明。
+                    type: string
+        BusinessDefaultConfigFrontendFieldCollection:
+            description: 前端传参字段目录集合响应 data。
+            type: object
+            required:
+                - items
+                - fieldMap
+            properties:
+                items:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/BusinessDefaultConfigFrontendField'
+                fieldMap:
+                    description: 按字段 key 索引的 map，便于前端直接通过 `fieldMap["operation.timeoutMinutes"]` 获取字段层级和接口用途。
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/BusinessDefaultConfigFrontendField'
+        BusinessDefaultConfigPatchRequest:
+            description: |-
+                业务默认配置部分更新请求。支持分组结构和扁平 key 两种写法。
+                - 分组结构：`{"backupRuntime":{"pollInterval":"30s"}}`
+                - 扁平 key：`{"backupRuntime.pollInterval":"30s"}`
+                未提交字段保持当前值不变。duration 必须是带单位字符串；int 必须是 JSON number；只读字段、未知字段、类型错误、越界值和跨字段关系错误返回 400。
+            type: object
+            additionalProperties:
+                oneOf:
+                    - type: object
+                      additionalProperties: true
+                    - type: string
+                    - type: integer
+                    - type: boolean
+            example:
+                backupRuntime:
+                    pollInterval: 30s
+                operationRuntime.defaultTimeoutMinutes: 120
+        BusinessDefaultConfigFieldErrorMeta:
+            description: 业务默认配置字段校验错误详情。
+            type: object
+            properties:
+                field:
+                    description: 出错字段路径，例如 `restoreRuntime.retryBackoff`。
+                    type: string
+                reason:
+                    description: 稳定错误原因说明，例如 `duration value is below minimum`、`field is read-only`。
+                    type: string
+                expected:
+                    description: 期望的数据类型。
+                    type: string
+                min:
+                    description: 字段最小值。
+                max:
+                    description: 字段最大值。
+                enumValues:
+                    type: array
+                    items:
+                        type: string
+                actualValue:
+                    description: 客户端提交的原始值。
         VeleroHookStatus:
             description: Velero Backup/Restore status.hookStatus 摘要。`hooksAttempted` 是已尝试执行的 Hook 数量，`hooksFailed` 是失败数量。
             type: object
@@ -1868,13 +2209,15 @@ components:
                     description: bulk modifier action JSON 文本入口，可为对象或数组字符串。
                     type: string
                 modifierRules:
-                    description: 结构化 restore modifier rule 列表。
+                    description: |-
+                        结构化 restore modifier rule 列表。当前每个 DisasterInstance 最多允许 1000 条规则；超过上限时创建/更新接口返回 `400 code=1000`，message 包含 `ModifierRuleRejected: modifier rule count <n> exceeds limit 1000`。
                     type: array
                     items:
                         type: object
                         additionalProperties: true
                 modifierRulesText:
-                    description: modifierRules 的 JSON 数组文本入口。
+                    description: |-
+                        modifierRules 的 JSON 数组文本入口。解析后的结构化规则同样受每实例最多 1000 条规则限制。
                     type: string
                 useUnifiedDirectionResolver:
                     description: 是否使用统一方向解析器。
@@ -1954,6 +2297,10 @@ components:
                         type: string
                 labelSelector:
                     $ref: '#/components/schemas/KubernetesLabelSelector'
+                operationTimeoutMinutes:
+                    description: 实例级容灾操作默认超时时间，单位分钟；operator 在实例初始化、DataSync、ResourceSync、Failover/Reprotect 等操作中使用，未设置时按 operator 默认值 60 分钟处理。
+                    type: integer
+                    format: int32
                 podRestoreMethod:
                     description: Standby 模式下 Pod 处理方式。
                     type: string
@@ -2152,6 +2499,10 @@ components:
                         type: string
                 labelSelector:
                     $ref: '#/components/schemas/KubernetesLabelSelector'
+                operationTimeoutMinutes:
+                    description: 实例级容灾操作默认超时时间，单位分钟；写入 DisasterInstance.spec.operationTimeoutMinutes，未传时由 operator 默认 60 分钟兜底。
+                    type: integer
+                    format: int32
                 podRestoreMethod:
                     type: string
                     enum: [replica, initContainer]
@@ -2178,6 +2529,10 @@ components:
                         type: string
                 labelSelector:
                     $ref: '#/components/schemas/KubernetesLabelSelector'
+                operationTimeoutMinutes:
+                    description: 实例级容灾操作默认超时时间，单位分钟；未传或 null 时保持原值。
+                    type: integer
+                    format: int32
                 podRestoreMethod:
                     type: string
                     enum: [replica, initContainer]
@@ -4218,6 +4573,555 @@ paths:
                 serverFile: internal/apis/deletion_check/v1/router.go
                 serverHandler: h.check
             x-runapi-target-id: example-runapi-target-id
+    /api/v1/business-default-config:
+        get:
+            description: |-
+                ## 1. 接口用来干什么
+
+                返回业务默认配置单例快照，供前端配置页面一次性展示所有当前变量值、默认值、字段含义、分组、生效方式、可编辑状态和校验边界。
+                该接口只读取 server 侧业务默认配置，不直接修改 operator runtime config；前端在创建备份、恢复、容灾操作和实例时读取这些默认值，再按业务表单写入对应请求体。
+
+                ## 2. 控制哪些资源
+
+                直接读取资源：
+                - ConfigMap：`disaster-system/disaster-business-default-config`，data key 为 `config`。
+                - server 内置字段目录：定义字段 key、中文名称、含义、默认值、类型、范围、分组和生效方式。
+
+                下层影响资源：
+                - 无。GET 只读，不创建、不更新、不删除 Kubernetes 资源，也不触发 operator reconcile。
+
+                资源作用范围：
+                - ConfigMap 不存在时返回字段目录默认值，`updatedAt` 为空，`updatedBy=system`。
+                - ConfigMap 存在时，`values` 中已覆盖字段作为 `value`，未覆盖字段仍使用 `defaultValue`。
+                - ConfigMap 中未知字段不会出现在响应中；已知字段如果类型、范围或跨字段关系非法，接口返回 500，避免把绕过接口写入的非法值展示为有效配置。
+
+                ## 3. 入参的详细说明
+
+                该接口不使用 query 参数和请求体。非 dev 环境需要有效 JWT。
+
+                ## 4. 返回的详细说明
+
+                成功响应使用统一 `Envelope`，`data` 为 `BusinessDefaultConfigSnapshot`。
+
+                | 字段 | 类型 | 中文含义 | 字段来源 | 说明 |
+                |---|---|---|---|---|
+                | `data.schemaVersion` | integer | 配置文档版本 | server | 当前固定为 `1`。 |
+                | `data.updatedAt` | string | 最近更新时间 | ConfigMap 文档 | PATCH 成功后写入 UTC RFC3339；从未更新时为空。 |
+                | `data.updatedBy` | string | 最近更新人 | JWT 上下文 | dev 模式未注入用户时为 `system`。 |
+                | `data.groups[].key` | string | 分组 key | server 字段目录 | 例如 `backupRuntime`、`restoreRuntime`。 |
+                | `data.groups[].name` | string | 分组名称 | server 字段目录 | 前端可直接展示。 |
+                | `data.groups[].description` | string | 分组说明 | server 字段目录 | 前端可直接展示。 |
+                | `data.groups[].fields[].key` | string | 字段路径 | server 字段目录 | PATCH 扁平提交时使用同一 key。 |
+                | `data.groups[].fields[].description` | string | 字段含义 | server 字段目录 | 前端配置页面直接展示。 |
+                | `data.groups[].fields[].value` | string/integer/boolean | 当前值 | ConfigMap 覆盖值或默认值 | duration 使用带单位字符串，int 使用 number。 |
+                | `data.groups[].fields[].defaultValue` | string/integer/boolean | 出厂默认值 | server 字段目录 | 未覆盖时 `value` 等于该值。 |
+                | `data.groups[].fields[].dataType` | string | 值类型 | server 字段目录 | `duration`、`int`、`bool`、`string`、`enum`。 |
+                | `data.groups[].fields[].editable` | boolean | 是否可编辑 | server 字段目录 | false 字段提交 PATCH 会返回 400。 |
+                | `data.groups[].fields[].effectMode` | string | 生效方式 | server 字段目录 | `hot`、`restart`、`startup`。 |
+                | `data.groups[].fields[].min/max` | string/integer | 校验边界 | server 字段目录 | duration 使用带单位字符串，int 使用 number。 |
+                | `data.groups[].fields[].enumValues` | array | 枚举值 | server 字段目录 | 非 enum 字段为空数组或省略。 |
+
+                ## 5. 可能返回的错误
+
+                | HTTP 状态码 | 业务码 | 错误原因 | 触发条件 |
+                |---|---|---|---|
+                | 401 | `2001` | 认证失败 | 非 dev 环境下未携带有效 JWT。 |
+                | 500 | `5000` | 配置读取失败 | Kubernetes ConfigMap 读取失败、ConfigMap JSON 损坏、绕过接口写入已知字段非法值。 |
+            operationId: get_api_v1_business_default_config
+            parameters: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GenericObject'
+                description: 该接口不使用请求体。
+                required: false
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/Envelope'
+                                    - type: object
+                                      properties:
+                                          data:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigSnapshot'
+                    description: 返回当前业务默认配置快照
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 认证失败
+                "500":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 服务端内部错误
+            security:
+                - bearerAuth: []
+            summary: 业务默认配置 GET /api/v1/business-default-config
+            tags:
+                - 业务默认配置
+            x-controlled-resources:
+                direct:
+                    - ConfigMap disaster-business-default-config
+                    - server 业务默认配置字段目录
+                downstream:
+                    - 无
+                scope: disaster-system namespace 单例配置
+            x-operator-chain:
+                controller: 无直接 controller 调用，字段语义与 disaster-operator OperatorRuntimeConfig 保持一致
+                crd: corev1.ConfigMap
+                serverFile: internal/apis/business_default_config/v1/router.go
+                serverHandler: h.getSnapshot
+            x-runapi-target-id: 1cc44c0c5fc01001
+        patch:
+            description: |-
+                ## 1. 接口用来干什么
+
+                部分更新业务默认配置单例。前端提交变化字段，server 合并当前快照、完成强类型校验、写入 ConfigMap，并返回更新后的完整快照。
+
+                ## 2. 控制哪些资源
+
+                直接更新资源：
+                - ConfigMap：`disaster-system/disaster-business-default-config`，data key 为 `config`。
+
+                下层影响资源：
+                - 不直接写 operator runtime config，不触发 operator reconcile。
+                - 更新后的默认值会被前端后续读取，并由前端写入备份、恢复、容灾操作、实例等业务请求体。
+
+                资源作用范围：
+                - 未提交字段保持当前值不变。
+                - 支持分组结构和扁平 key；两种写法可在同一请求中同时出现。
+                - 写入前校验未知字段、只读字段、类型、范围、枚举和跨字段关系。
+                - 当前跨字段关系：`instanceRuntime.transitionWatchdogTimeout` 必须大于等于 `instanceRuntime.minTransitionWatchdogTimeout`。
+
+                ## 3. 入参的详细说明
+
+                请求体为 JSON object。
+
+                | 写法 | 示例 | 说明 |
+                |---|---|---|
+                | 分组结构 | `{"backupRuntime":{"pollInterval":"30s"}}` | 推荐前端表单按分组提交。 |
+                | 扁平 key | `{"backupRuntime.pollInterval":"30s"}` | 便于调试工具和脚本直接提交。 |
+
+                字段值规则：
+                - duration 字段必须是带单位字符串，例如 `30s`、`5m`、`2h`。
+                - int 字段必须是 JSON number，例如 `120`，不能传字符串 `"120"`。
+                - 只读字段 `editable=false` 不允许修改。
+                - 未知字段不允许写入。
+
+                ## 4. 返回的详细说明
+
+                成功响应使用统一 `Envelope`，`data` 为更新后的 `BusinessDefaultConfigSnapshot`。
+                `updatedAt` 会刷新为本次写入时间，`updatedBy` 来自 JWT 中的 `userName`；dev 模式未注入用户时写入 `system`。
+
+                ## 5. 可能返回的错误
+
+                | HTTP 状态码 | 业务码 | 错误原因 | 触发条件 |
+                |---|---|---|---|
+                | 400 | `1000` | 请求体非法 | 空 body、非 JSON object、空 object、分组值不是 object。 |
+                | 400 | `1000` | 未知字段 | 字段路径不在业务默认配置字段目录内。 |
+                | 400 | `1000` | 只读字段 | 提交 `editable=false` 字段。 |
+                | 400 | `1000` | 类型错误 | duration 未传字符串、int 未传 number、duration 不能解析。 |
+                | 400 | `1000` | 越界 | 值小于 `min` 或大于 `max`。 |
+                | 400 | `1000` | 跨字段关系错误 | `transitionWatchdogTimeout` 小于 `minTransitionWatchdogTimeout`。 |
+                | 401 | `2001` | 认证失败 | 非 dev 环境下未携带有效 JWT。 |
+                | 403 | `2003` | 权限不足 | JWT 用户不是 `admin`。dev 模式无用户上下文时保持兼容允许写入。 |
+                | 409 | `3009` | 资源冲突 | ConfigMap 更新遇到 Kubernetes resourceVersion 冲突且重试后仍失败。 |
+                | 500 | `5000` | 服务端错误 | ConfigMap 读写失败、JSON 编码失败、存储文档损坏。 |
+
+                字段校验失败时，`meta` 为 `BusinessDefaultConfigFieldErrorMeta`，包含 `field`、`reason`、`expected`、`min`、`max`、`actualValue`。
+            operationId: patch_api_v1_business_default_config
+            parameters: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/BusinessDefaultConfigPatchRequest'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/Envelope'
+                                    - type: object
+                                      properties:
+                                          data:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigSnapshot'
+                    description: 更新成功并返回最新快照
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/ErrorEnvelope'
+                                    - type: object
+                                      properties:
+                                          meta:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigFieldErrorMeta'
+                    description: 请求体或字段值非法
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 认证失败
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 权限不足
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 资源冲突
+                "500":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 服务端内部错误
+            security:
+                - bearerAuth: []
+            summary: 业务默认配置 PATCH /api/v1/business-default-config
+            tags:
+                - 业务默认配置
+            x-controlled-resources:
+                direct:
+                    - ConfigMap disaster-business-default-config
+                    - server 业务默认配置字段目录
+                downstream:
+                    - 后续由前端写入业务请求体
+                scope: disaster-system namespace 单例配置
+            x-operator-chain:
+                controller: 无直接 controller 调用，字段语义与 disaster-operator OperatorRuntimeConfig 保持一致
+                crd: corev1.ConfigMap
+                serverFile: internal/apis/business_default_config/v1/router.go
+                serverHandler: h.patchConfig
+            x-runapi-target-id: 1cc44c0cb1801001
+    /api/v1/business-default-config/fields:
+        get:
+            description: |-
+                ## 1. 接口用来干什么
+
+                按字段维度返回业务默认配置集合，供前端配置页面做搜索、筛选、排序和分页。列表项与快照接口使用同一份字段目录和同一份当前值来源。
+
+                ## 2. 控制哪些资源
+
+                直接读取资源：
+                - ConfigMap：`disaster-system/disaster-business-default-config`。
+                - server 内置字段目录。
+
+                下层影响资源：
+                - 无。该接口只读。
+
+                ## 3. 入参的详细说明
+
+                | 参数 | 类型 | 是否必传 | 可传入值 | 中文含义 | 约束与默认值 |
+                |---|---|---|---|---|---|
+                | `keyword` | string | 否 | 任意字符串 | 搜索关键字 | 对 `key`、`name`、`description`、`value`、`groupKey`、`groupName` 做大小写不敏感包含匹配。 |
+                | `q` | string | 否 | 任意字符串 | 搜索关键字兼容别名 | 当 `keyword` 为空时生效。 |
+                | `groupKey` | string | 否 | `backupRuntime`、`restoreRuntime`、`operationRuntime`、`instanceRuntime`、`syncRuntime`、`storageRuntime`、`clusterRuntime` | 分组精确筛选 | 不传时不过滤分组。 |
+                | `editable` | boolean | 否 | `true`、`false` | 可编辑性筛选 | 非 boolean 文本返回 400。 |
+                | `effectMode` | string | 否 | `hot`、`restart`、`startup` | 生效方式筛选 | 精确匹配。 |
+                | `page` | integer | 否 | 大于等于 1 | 页码 | 默认 1。 |
+                | `limit` | integer | 否 | `-1` 或正整数 | 每页数量 | 默认 10；`-1` 返回全部。 |
+                | `sort` | string | 否 | `key`、`name`、`groupKey`、`groupName`、`dataType`、`effectMode`、`editable`、`value` | 排序字段 | 不传时按 key 升序。 |
+                | `order` | string | 否 | `asc`、`desc` | 排序方向 | `sort` 生效时使用；默认按升序处理。 |
+
+                ## 4. 返回的详细说明
+
+                成功响应使用集合信封，`data.items[]` 为 `BusinessDefaultConfigField`，`meta.pagination` 为分页信息，`meta.links.self` 保留本次搜索和筛选参数。
+
+                ## 5. 可能返回的错误
+
+                | HTTP 状态码 | 业务码 | 错误原因 | 触发条件 |
+                |---|---|---|---|
+                | 400 | `1000` | 查询参数非法 | `editable` 不是 `true` 或 `false`。 |
+                | 401 | `2001` | 认证失败 | 非 dev 环境下未携带有效 JWT。 |
+                | 500 | `5000` | 配置读取失败 | Kubernetes ConfigMap 读取失败、ConfigMap JSON 损坏、绕过接口写入已知字段非法值。 |
+            operationId: get_api_v1_business_default_config_fields
+            parameters:
+                - name: keyword
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 搜索关键字，对字段 key、名称、说明、当前值、分组 key、分组名称执行包含匹配。
+                - name: q
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 搜索关键字兼容别名，仅当 `keyword` 为空时生效。
+                - name: groupKey
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 分组精确筛选。
+                - name: editable
+                  in: query
+                  required: false
+                  schema:
+                      type: boolean
+                  description: 按是否可编辑筛选。
+                - name: effectMode
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                      enum:
+                          - hot
+                          - restart
+                          - startup
+                  description: 按生效方式筛选。
+                - name: page
+                  in: query
+                  required: false
+                  schema:
+                      type: integer
+                      default: 1
+                  description: 页码，默认 1。
+                - name: limit
+                  in: query
+                  required: false
+                  schema:
+                      type: integer
+                      default: 10
+                  description: 每页数量，默认 10，传 -1 返回全部。
+                - name: sort
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 排序字段。
+                - name: order
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                      enum:
+                          - asc
+                          - desc
+                  description: 排序方向。
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GenericObject'
+                description: 该接口不使用请求体。
+                required: false
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/Envelope'
+                                    - type: object
+                                      properties:
+                                          data:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigFieldCollection'
+                                          meta:
+                                              $ref: '#/components/schemas/CollectionMeta'
+                    description: 返回字段集合
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/ErrorEnvelope'
+                                    - type: object
+                                      properties:
+                                          meta:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigFieldErrorMeta'
+                    description: 查询参数错误
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 认证失败
+                "500":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 服务端内部错误
+            security:
+                - bearerAuth: []
+            summary: 业务默认配置 GET /api/v1/business-default-config/fields
+            tags:
+                - 业务默认配置
+            x-controlled-resources:
+                direct:
+                    - ConfigMap disaster-business-default-config
+                    - server 业务默认配置字段目录
+                downstream:
+                    - 无
+                scope: disaster-system namespace 单例配置
+            x-operator-chain:
+                controller: 无直接 controller 调用，字段语义与 disaster-operator OperatorRuntimeConfig 保持一致
+                crd: corev1.ConfigMap
+                serverFile: internal/apis/business_default_config/v1/router.go
+                serverHandler: h.listFields
+            x-runapi-target-id: 1cc44c0c96401001
+    /api/v1/business-default-config/frontend-fields:
+        get:
+            description: |-
+                ## 1. 接口用来干什么
+
+                返回“前端传参字段目录”，供前端读取需要动态传给业务接口的默认值、请求字段层级和接口用途。
+                该接口与 `/business-default-config/fields` 不同：`fields` 返回参数管理页面的运行时参数字段；`frontend-fields` 返回业务请求字段，包括 `key/value`、`requestPathSegments`、`specPathSegments` 和 `apiUsages`。
+                前端可以使用 `data.fieldMap` 按字段 key 直接获取字段层级和应调用的业务接口。
+
+                ## 2. 控制哪些资源
+
+                直接读取资源：
+                - server 内置前端传参 key/value 目录。
+
+                下层影响资源：
+                - 无。该接口只读，不读取或修改 ConfigMap，不创建、不更新、不删除 Kubernetes 资源，不触发 operator reconcile。
+
+                ## 3. 入参的详细说明
+
+                | 参数 | 类型 | 是否必传 | 可传入值 | 中文含义 | 约束与默认值 |
+                |---|---|---|---|---|---|
+                | `keyword` | string | 否 | 任意字符串 | 搜索关键字 | 对 `key` 与 `value` 做大小写不敏感包含匹配。 |
+                | `q` | string | 否 | 任意字符串 | 搜索关键字兼容别名 | 当 `keyword` 为空时生效。 |
+                | `page` | integer | 否 | 大于等于 1 | 页码 | 默认 1。 |
+                | `limit` | integer | 否 | `-1` 或正整数 | 每页数量 | 默认 10；`-1` 返回全部。 |
+                | `sort` | string | 否 | `key`、`value` | 排序字段 | 不传时按 key 升序。 |
+                | `order` | string | 否 | `asc`、`desc` | 排序方向 | `sort` 生效时使用；默认按升序处理。 |
+
+                ## 4. 返回的详细说明
+
+                成功响应使用集合信封，`data.items[]` 为 `BusinessDefaultConfigFrontendField`，`data.fieldMap` 为按 key 索引的字段 map，`meta.pagination` 为分页信息，`meta.links.self` 保留本次搜索参数。
+                查询全部字段时传 `limit=-1`。
+
+                | 字段 | 类型 | 中文含义 | 字段来源 | 说明 |
+                |---|---|---|---|---|
+                | `key` | string | 目录字段 key | server 字段目录 | 例如 `operation.timeoutMinutes`。 |
+                | `value` | string/integer/boolean/object | 默认值 | server 字段目录 | 前端写入业务请求字段的建议默认值。 |
+                | `requestPath` | string | 请求体字段路径 | server 字段目录 | 例如 `config.timeoutMinutes`。 |
+                | `requestPathSegments` | string[] | 请求体字段层级 | server 字段目录 | 前端可据此组装嵌套 JSON。 |
+                | `specPath` | string | CRD spec 字段路径 | server 字段目录 | 例如 `spec.timeoutMinutes`。 |
+                | `specPathSegments` | string[] | CRD spec 字段层级 | server 字段目录 | 用于展示最终写入位置。 |
+                | `apiUsages[]` | array | 使用该字段的接口列表 | server 字段目录 | 包含 method、path、requestPath、operation 和说明。 |
+                | `fieldMap` | object | 字段 key 到字段详情的 map | server 字段目录 | 仅包含当前分页结果中的字段。 |
+
+                ## 5. 可能返回的错误
+
+                | HTTP 状态码 | 业务码 | 错误原因 | 触发条件 |
+                |---|---|---|---|
+                | 401 | `2001` | 认证失败 | 非 dev 环境下未携带有效 JWT。 |
+                | 500 | `5000` | 服务端内部错误 | server 内部异常。 |
+            operationId: get_api_v1_business_default_config_frontend_fields
+            parameters:
+                - name: keyword
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 搜索关键字，对前端传参字段 key 和 value 执行包含匹配。
+                - name: q
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 搜索关键字兼容别名，仅当 `keyword` 为空时生效。
+                - name: page
+                  in: query
+                  required: false
+                  schema:
+                      type: integer
+                      default: 1
+                  description: 页码，默认 1。
+                - name: limit
+                  in: query
+                  required: false
+                  schema:
+                      type: integer
+                      default: 10
+                  description: 每页数量，默认 10，传 -1 返回全部。
+                - name: sort
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                      enum:
+                          - key
+                          - value
+                  description: 排序字段，支持 `key` 或 `value`。
+                - name: order
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                      enum:
+                          - asc
+                          - desc
+                  description: 排序方向。
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GenericObject'
+                description: 该接口不使用请求体。
+                required: false
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/Envelope'
+                                    - type: object
+                                      properties:
+                                          data:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigFrontendFieldCollection'
+                                          meta:
+                                              $ref: '#/components/schemas/CollectionMeta'
+                    description: 返回前端传参字段集合
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 认证失败
+                "500":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 服务端内部错误
+            security:
+                - bearerAuth: []
+            summary: 业务默认配置 GET /api/v1/business-default-config/frontend-fields
+            tags:
+                - 业务默认配置
+            x-controlled-resources:
+                direct:
+                    - server 前端传参 key/value 目录
+                downstream:
+                    - 前端后续写入 AppBackup/AppRestore/DisasterInstance/DisasterOperation/DisasterDrill 请求体
+                scope: 只读目录，无 Kubernetes 资源写入
+            x-operator-chain:
+                controller: 无直接 controller 调用；字段最终由前端通过业务接口写入 CRD spec 后被 operator 消费
+                crd: AppBackup, AppRestore, DisasterInstance, DisasterOperation, DisasterDrill
+                serverFile: internal/apis/business_default_config/v1/router.go
+                serverHandler: h.listFrontendSpecFields
+            x-runapi-target-id: 1cc4b3ea76401001
     /api/v1/system-settings:
         get:
             description: |-
@@ -9353,7 +10257,7 @@ paths:
 
                 ## 3. 入参的详细说明
 
-                请求体为 JSON，所有字段均为局部更新。支持 `token`、`tag`、`description`、`imageSources`、`veleroInstall`。未携带字段表示保持原值。`veleroInstall.imageRegistry` 传非空值时修改 Velero 安装镜像仓库前缀，传空字符串时删除 server 管理的 registry Secret 并清空整段 `Cluster.spec.veleroInstall`。`veleroInstall.username/password` 传非空值时必须成对出现，用于轮换管理平面 dockerconfigjson Secret；`veleroInstall.username` 传空字符串时删除 server 管理的 registry Secret 并清空 `Cluster.spec.veleroInstall.registryCredentialSecretRef`，但保留 `imageRegistry`。`veleroInstall.removeCredential=true` 执行同一凭据清空语义。未携带 username/password 不代表删除凭据。
+                请求体为 JSON，所有字段均为局部更新。支持 `token`、`tag`、`description`、`imageSources`、`veleroInstall`。未携带字段表示保持原值。`veleroInstall.imageRegistry` 传非空值时修改 Velero 安装镜像仓库前缀，传空字符串时删除 server 管理的 registry Secret 并清空整段 `Cluster.spec.veleroInstall`。`veleroInstall.password` 传非空值时表示轮换管理平面 dockerconfigjson Secret，此时 `veleroInstall.username` 也必须非空，且有效镜像源前缀不能为空；`veleroInstall.password` 未携带或传空字符串时表示不修改既有凭据，可与编辑态回显的 `username` 一起提交，不会创建、更新或删除 Secret。`veleroInstall.removeCredential=true` 表示显式删除凭据，server 删除管理平面 registry Secret 并清空 `Cluster.spec.veleroInstall.registryCredentialSecretRef`，但保留非空 `imageRegistry`。未携带 username/password 不代表删除凭据，空 username/password 也不代表删除凭据。
 
                 ## 4. 返回的详细说明
 
@@ -15116,7 +16020,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                创建 DisasterInstance。server 校验 `syncPolicy` 禁用、JSON/binding、DisasterConfig 存在性、受保护 namespace 冲突、restorePolicy 和 veleroHooks，然后创建 CRD。201 只表示 CRD 创建成功，operator 后续创建 DataSync `dr-ds-<name>` 与 ResourceSync `dr-rs-<name>` 并推进 fsmState。
+                创建 DisasterInstance。server 校验 `syncPolicy` 禁用、JSON/binding、DisasterConfig 存在性、restorePolicy 和 veleroHooks，然后创建 CRD。当前临时放开受保护 namespace 冲突校验，同一 sourceCluster 下同一业务 namespace 可被多个 DisasterInstance 选择。201 只表示 CRD 创建成功，operator 后续创建 DataSync `dr-ds-<name>` 与 ResourceSync `dr-rs-<name>` 并推进 fsmState。
 
                 ## 2. 控制哪些资源
 
@@ -15130,10 +16034,11 @@ paths:
                 | `namespace` | 否 | CRD namespace | 空时默认 `disaster-system`。 |
                 | `config` | 是 | DisasterConfig 名称 | 校验存在并写入 spec.config；不存在返回 400。 |
                 | `dataSyncPolicy/resourceSyncPolicy` | 否 | 实例级策略 override | 空时继承 config 对应策略。 |
-                | `namespaces` | 否 | 保护 namespace 列表 | 参与同 sourceCluster 受保护 namespace 冲突校验。 |
+                | `namespaces` | 否 | 保护 namespace 列表 | 当前临时允许同一 sourceCluster 下多个 DisasterInstance 选择相同 namespace。 |
                 | `labelSelector` | 否 | 资源选择器 | 写入 spec；bulk/live modifier 校验可使用。 |
+                | `operationTimeoutMinutes` | 否 | 实例级容灾操作超时时间 | 单位分钟，写入 `spec.operationTimeoutMinutes`；operator 在初始化、DataSync、ResourceSync、Failover/Reprotect 等操作中使用，未传时按 operator 默认 60 分钟处理。大容量 PV/FSB 同步场景应按数据量和并发能力显式设置。 |
                 | `podRestoreMethod` | 否 | Pod 恢复方法 | `replica/initContainer`；空时 server 默认 `replica`。 |
-                | `restorePolicy` | 否 | 恢复策略 | 支持 resourceSelection、class mapping、bulk actions、modifier rules；文本和结构化入口同时存在时必须语义一致；modifier rule live path 按 JSON Patch 语义校验，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 静态快照生成会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**` 等受保护路径，不要求通过排除 pods 规避 status 命中；`bulkModifierActions[].action=rewriteImage` 只校验并保存 `imageRewrite.sourcePrefix/targetPrefix` 等运行时动态镜像重写意图，不在创建时生成长期 `modifierRuleSnapshot`。 |
+                | `restorePolicy` | 否 | 恢复策略 | 支持 resourceSelection、class mapping、bulk actions、modifier rules；文本和结构化入口同时存在时必须语义一致；每实例 `modifierRules` 最多 1000 条，单条 veleroNative patches 最多 50 个；modifier rule live path 按 JSON Patch 语义校验，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 静态快照生成会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**` 等受保护路径，不要求通过排除 pods 规避 status 命中；`bulkModifierActions[].action=rewriteImage` 只校验并保存 `imageRewrite.sourcePrefix/targetPrefix` 等运行时动态镜像重写意图，不在创建时生成长期 `modifierRuleSnapshot`。 |
                 | `veleroHooks.dataBackup` | 否 | DataSync 数据备份 Hook | Velero BackupHooks 原生结构，整体写入 DataSync 生成的 AppBackup `spec.template.hooks`；command argv 透明透传。 |
                 | `veleroHooks.dataRestore` | 否 | DataSync 数据恢复 Hook | Velero RestoreHooks 原生结构，整体写入 DataSync 生成的 AppRestore `spec.template.hooks`；restore initContainer 可通过 Secret env/envFrom 传敏感值。 |
                 | `skipPodReadyCheck` | 否 | Pod ready 默认校验策略 | 可被 action config 覆盖。 |
@@ -15144,6 +16049,7 @@ paths:
                 | 字段 | 类型/取值 | 中文含义 | 来源/说明 |
                 |---|---|---|---|
                 | `data` | DisasterInstanceDTO | 刚创建的实例 | operator 通常尚未回写 status，`currentState` 可能为 `Unknown`。 |
+                | `data.spec.operationTimeoutMinutes` | integer | 实例级操作超时时间 | 来自 `DisasterInstance.spec.operationTimeoutMinutes`；未设置时响应中省略但 operator 默认按 60 分钟处理。 |
                 | `data.spec.veleroHooks` | object/null | Hook 配置回显 | 来自刚写入的 DisasterInstance spec；未配置时省略。 |
                 | `trace_id` | string | 请求追踪 ID | 同步写入 CR annotation。 |
 
@@ -15154,8 +16060,8 @@ paths:
                 | 400 | `1000` | 请求、策略或 Hook 非法 | binding、Config 不存在、ResourceSelectionInvalid、ModifierRulesTextInvalid、BulkModifierActionsTextInvalid、ModifierRuleRejected、Hook 结构非法、Hook timeout 超过上限、Kubernetes Invalid/BadRequest。 |
                 | 400 | `1000` + meta.errorCode=`VeleroHookSensitiveParameter` | Hook 明文敏感参数 | command/args/env.value 中包含明显敏感片段，如 `password=`、`token=`、`access_key=`、`secret=`；meta.fieldPath 返回字段路径。 |
                 | 403 | `2003` | 权限不足 | Kubernetes Create Forbidden。 |
-                | 409 | `3009` | 冲突 | 同名实例或受保护 namespace 冲突。 |
-                | 500 | `5000` | 创建失败 | 配置读取非 NotFound、保护索引构建失败或 Create 非分类错误。 |
+                | 409 | `3009` | 冲突 | 同名实例。 |
+                | 500 | `5000` | 创建失败 | 配置读取非 NotFound 或 Create 非分类错误。 |
             operationId: post_apis_disasterinstances_testudo_softcdata_com_v1_instances
             parameters: []
             requestBody:
@@ -15433,9 +16339,9 @@ paths:
                 | `name` | 是 | 实例名称 | path 参数；body 不含 name。 |
                 | `namespace` | 否 | 实例 namespace | 为空时自动解析。 |
                 | `dataSyncPolicy/resourceSyncPolicy` | 否 | 策略 override | 未传或 null 保持，空字符串清空。 |
-                | `namespaces` | 否 | 保护 namespace | 未传或 null 保持，空数组清空，会重新做保护冲突校验。 |
+                | `namespaces` | 否 | 保护 namespace | 未传或 null 保持，空数组清空；当前临时允许同一 sourceCluster 下多个 DisasterInstance 选择相同 namespace。 |
                 | `labelSelector` | 否 | 资源选择器 | 传对象整体替换；未传或 null 保持。 |
-                | `restorePolicy` | 否 | 恢复策略 | 未传或 null 不更新；传对象时合并出现的子字段；modifier rule live path 按 JSON Patch 语义校验，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 静态快照生成会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**` 等受保护路径，不要求通过排除 pods 规避 status 命中；`bulkModifierActions[].action=rewriteImage` 只校验并保存 `imageRewrite.sourcePrefix/targetPrefix` 等运行时动态镜像重写意图，不在更新时生成长期 `modifierRuleSnapshot`。 |
+                | `restorePolicy` | 否 | 恢复策略 | 未传或 null 不更新；传对象时合并出现的子字段；每实例 `modifierRules` 最多 1000 条，单条 veleroNative patches 最多 50 个；modifier rule live path 按 JSON Patch 语义校验，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 静态快照生成会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**` 等受保护路径，不要求通过排除 pods 规避 status 命中；`bulkModifierActions[].action=rewriteImage` 只校验并保存 `imageRewrite.sourcePrefix/targetPrefix` 等运行时动态镜像重写意图，不在更新时生成长期 `modifierRuleSnapshot`。 |
                 | `veleroHooks` | 否 | 容灾 Hook 配置 | 未出现保持原值；传 null 或 `{}` 清空全部；`dataBackup`/`dataRestore` 子字段未出现保持对应子字段，传 null 或 `{}` 清空对应子字段，传对象整体替换。 |
                 | `podRestoreMethod/skipPodReadyCheck/description` | 否 | 其他可更新字段 | description 空字符串清空 annotation。 |
 
@@ -15455,7 +16361,7 @@ paths:
                 | 400 | `1000` + meta.errorCode=`VeleroHookSensitiveParameter` | Hook 明文敏感参数 | command/args/env.value 中包含明显敏感片段；meta.fieldPath 返回字段路径。 |
                 | 403 | `2003` | 权限不足 | Kubernetes Update Forbidden。 |
                 | 404 | `3004` | 实例不存在 | findNamespace 或 Get 返回 NotFound。 |
-                | 409 | `3009` | 保护范围冲突 | 受保护 namespace 冲突。 |
+                | 409 | `3009` | 资源冲突 | 当前 handler 正常路径不再因受保护 namespace 冲突返回 409；保留该响应用于兼容 Kubernetes 冲突类文档。 |
                 | 500 | `5000` | 更新失败 | RetryOnConflict 后仍失败或非分类错误。 |
             operationId: put_apis_disasterinstances_testudo_softcdata_com_v1_instances_name
             parameters:
@@ -20877,6 +21783,453 @@ paths:
                 serverFile: internal/apis/platform_license/v1/router.go
                 serverHandler: h.status
             x-runapi-target-id: example-runapi-target-id
+    /apis/v1/business-default-config:
+        get:
+            description: |-
+                ## 1. 接口用来干什么
+
+                `/apis/v1/business-default-config` 是 `/api/v1/business-default-config` 的兼容前缀，调用同一 server handler `h.getSnapshot`，用于返回业务默认配置单例快照。
+
+                ## 2. 控制哪些资源
+
+                直接读取资源：
+                - ConfigMap：`disaster-system/disaster-business-default-config`。
+                - server 内置业务默认配置字段目录。
+
+                下层影响资源：
+                - 无。GET 只读，不触发 operator reconcile。
+
+                ## 3. 入参的详细说明
+
+                不使用请求体和 query 参数。非 dev 环境需要有效 JWT。
+
+                ## 4. 返回的详细说明
+
+                响应结构与 `/api/v1/business-default-config` 完全一致，`data` 为 `BusinessDefaultConfigSnapshot`，字段含义、默认值、当前值、分组、可编辑性、生效方式和校验边界均由同一份字段目录生成。
+
+                ## 5. 可能返回的错误
+
+                与 `/api/v1/business-default-config` 一致：401 表示认证失败，500 表示 ConfigMap 读取失败、JSON 损坏或绕过接口写入的非法配置。
+            operationId: get_apis_v1_business_default_config
+            parameters: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GenericObject'
+                description: 该接口不使用请求体。
+                required: false
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/Envelope'
+                                    - type: object
+                                      properties:
+                                          data:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigSnapshot'
+                    description: 返回当前业务默认配置快照
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 认证失败
+                "500":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 服务端内部错误
+            security:
+                - bearerAuth: []
+            summary: 业务默认配置 GET /apis/v1/business-default-config
+            tags:
+                - 业务默认配置
+            x-controlled-resources:
+                direct:
+                    - ConfigMap disaster-business-default-config
+                    - server 业务默认配置字段目录
+                downstream:
+                    - 无
+                scope: disaster-system namespace 单例配置
+            x-operator-chain:
+                controller: 无直接 controller 调用，字段语义与 disaster-operator OperatorRuntimeConfig 保持一致
+                crd: corev1.ConfigMap
+                serverFile: internal/apis/business_default_config/v1/router.go
+                serverHandler: h.getSnapshot
+            x-runapi-target-id: 1cc44c0ccd401001
+        patch:
+            description: |-
+                ## 1. 接口用来干什么
+
+                `/apis/v1/business-default-config` 是 `/api/v1/business-default-config` 的兼容前缀，调用同一 server handler `h.patchConfig`，用于部分更新业务默认配置单例。
+
+                ## 2. 控制哪些资源
+
+                直接更新资源：
+                - ConfigMap：`disaster-system/disaster-business-default-config`。
+
+                下层影响资源：
+                - 不直接写 operator runtime config；更新值会被前端后续读取，并写入对应业务请求体。
+
+                ## 3. 入参的详细说明
+
+                请求体与 `/api/v1/business-default-config` 一致，支持分组结构和扁平 key。duration 必须传带单位字符串；int 必须传 JSON number；未知字段、只读字段、类型错误、范围错误和跨字段关系错误返回 400。
+
+                ## 4. 返回的详细说明
+
+                成功后返回更新后的 `BusinessDefaultConfigSnapshot`，并刷新 `updatedAt`、`updatedBy`。
+
+                ## 5. 可能返回的错误
+
+                与 `/api/v1/business-default-config` 一致：400 表示请求体或字段值非法，401 表示认证失败，403 表示非 admin 用户修改，409 表示 Kubernetes 更新冲突，500 表示服务端错误。
+            operationId: patch_apis_v1_business_default_config
+            parameters: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/BusinessDefaultConfigPatchRequest'
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/Envelope'
+                                    - type: object
+                                      properties:
+                                          data:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigSnapshot'
+                    description: 更新成功并返回最新快照
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/ErrorEnvelope'
+                                    - type: object
+                                      properties:
+                                          meta:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigFieldErrorMeta'
+                    description: 请求体或字段值非法
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 认证失败
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 权限不足
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 资源冲突
+                "500":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 服务端内部错误
+            security:
+                - bearerAuth: []
+            summary: 业务默认配置 PATCH /apis/v1/business-default-config
+            tags:
+                - 业务默认配置
+            x-controlled-resources:
+                direct:
+                    - ConfigMap disaster-business-default-config
+                    - server 业务默认配置字段目录
+                downstream:
+                    - 后续由前端写入业务请求体
+                scope: disaster-system namespace 单例配置
+            x-operator-chain:
+                controller: 无直接 controller 调用，字段语义与 disaster-operator OperatorRuntimeConfig 保持一致
+                crd: corev1.ConfigMap
+                serverFile: internal/apis/business_default_config/v1/router.go
+                serverHandler: h.patchConfig
+            x-runapi-target-id: 1cc44c0d04401001
+    /apis/v1/business-default-config/fields:
+        get:
+            description: |-
+                ## 1. 接口用来干什么
+
+                `/apis/v1/business-default-config/fields` 是 `/api/v1/business-default-config/fields` 的兼容前缀，调用同一 server handler `h.listFields`，用于按字段维度搜索、筛选、排序和分页展示业务默认配置。
+
+                ## 2. 控制哪些资源
+
+                直接读取 ConfigMap `disaster-business-default-config` 和 server 内置字段目录。该接口只读，不触发 operator reconcile。
+
+                ## 3. 入参的详细说明
+
+                参数与 `/api/v1/business-default-config/fields` 一致：`keyword`、`q`、`groupKey`、`editable`、`effectMode`、`page`、`limit`、`sort`、`order`。
+                `keyword` 对 `key`、`name`、`description`、`value`、`groupKey`、`groupName` 执行大小写不敏感包含匹配；`groupKey`、`editable`、`effectMode` 为筛选条件。
+
+                ## 4. 返回的详细说明
+
+                成功响应为集合信封，`data.items[]` 为 `BusinessDefaultConfigField`，`meta.pagination` 返回分页信息，`meta.links.self` 保留本次查询参数。
+
+                ## 5. 可能返回的错误
+
+                与 `/api/v1/business-default-config/fields` 一致：400 表示 `editable` 查询值非法，401 表示认证失败，500 表示配置读取失败。
+            operationId: get_apis_v1_business_default_config_fields
+            parameters:
+                - name: keyword
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 搜索关键字，对字段 key、名称、说明、当前值、分组 key、分组名称执行包含匹配。
+                - name: q
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 搜索关键字兼容别名。
+                - name: groupKey
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 分组精确筛选。
+                - name: editable
+                  in: query
+                  required: false
+                  schema:
+                      type: boolean
+                  description: 按是否可编辑筛选。
+                - name: effectMode
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                      enum:
+                          - hot
+                          - restart
+                          - startup
+                  description: 按生效方式筛选。
+                - name: page
+                  in: query
+                  required: false
+                  schema:
+                      type: integer
+                      default: 1
+                  description: 页码。
+                - name: limit
+                  in: query
+                  required: false
+                  schema:
+                      type: integer
+                      default: 10
+                  description: 每页数量，传 -1 返回全部。
+                - name: sort
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 排序字段。
+                - name: order
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                      enum:
+                          - asc
+                          - desc
+                  description: 排序方向。
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GenericObject'
+                description: 该接口不使用请求体。
+                required: false
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/Envelope'
+                                    - type: object
+                                      properties:
+                                          data:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigFieldCollection'
+                                          meta:
+                                              $ref: '#/components/schemas/CollectionMeta'
+                    description: 返回字段集合
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/ErrorEnvelope'
+                                    - type: object
+                                      properties:
+                                          meta:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigFieldErrorMeta'
+                    description: 查询参数错误
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 认证失败
+                "500":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 服务端内部错误
+            security:
+                - bearerAuth: []
+            summary: 业务默认配置 GET /apis/v1/business-default-config/fields
+            tags:
+                - 业务默认配置
+            x-controlled-resources:
+                direct:
+                    - ConfigMap disaster-business-default-config
+                    - server 业务默认配置字段目录
+                downstream:
+                    - 无
+                scope: disaster-system namespace 单例配置
+            x-operator-chain:
+                controller: 无直接 controller 调用，字段语义与 disaster-operator OperatorRuntimeConfig 保持一致
+                crd: corev1.ConfigMap
+                serverFile: internal/apis/business_default_config/v1/router.go
+                serverHandler: h.listFields
+            x-runapi-target-id: 1cc44c0ce8c01000
+    /apis/v1/business-default-config/frontend-fields:
+        get:
+            description: |-
+                ## 1. 接口用来干什么
+
+                `/apis/v1/business-default-config/frontend-fields` 是 `/api/v1/business-default-config/frontend-fields` 的兼容前缀，调用同一 server handler `h.listFrontendSpecFields`，用于返回前端传参字段目录。
+                前端通过该接口拿到默认值、字段层级和接口用途，再写入创建备份、恢复、实例、演练或容灾操作的请求体。
+
+                ## 2. 控制哪些资源
+
+                直接读取 server 内置前端传参 key/value 目录。该接口只读，不读取或修改 ConfigMap，不触发 operator reconcile。
+
+                ## 3. 入参的详细说明
+
+                参数与 `/api/v1/business-default-config/frontend-fields` 一致：`keyword`、`q`、`page`、`limit`、`sort`、`order`。
+                `keyword` 对 `key` 与 `value` 执行大小写不敏感包含匹配；查全部传 `limit=-1`；`sort` 支持 `key` 和 `value`。
+
+                ## 4. 返回的详细说明
+
+                成功响应为集合信封，`data.items[]` 为 `BusinessDefaultConfigFrontendField`，`data.fieldMap` 为按 key 索引的字段 map，`meta.pagination` 返回分页信息，`meta.links.self` 保留本次查询参数。
+                每个条目包含 `key/value`、`requestPathSegments`、`specPathSegments` 和 `apiUsages`，前端可直接通过 `fieldMap["operation.timeoutMinutes"]` 获取字段使用方式。
+
+                ## 5. 可能返回的错误
+
+                与 `/api/v1/business-default-config/frontend-fields` 一致：401 表示认证失败，500 表示服务端内部错误。
+            operationId: get_apis_v1_business_default_config_frontend_fields
+            parameters:
+                - name: keyword
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 搜索关键字，对前端传参字段 key 和 value 执行包含匹配。
+                - name: q
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                  description: 搜索关键字兼容别名，仅当 `keyword` 为空时生效。
+                - name: page
+                  in: query
+                  required: false
+                  schema:
+                      type: integer
+                      default: 1
+                  description: 页码，默认 1。
+                - name: limit
+                  in: query
+                  required: false
+                  schema:
+                      type: integer
+                      default: 10
+                  description: 每页数量，默认 10，传 -1 返回全部。
+                - name: sort
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                      enum:
+                          - key
+                          - value
+                  description: 排序字段，支持 `key` 或 `value`。
+                - name: order
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                      enum:
+                          - asc
+                          - desc
+                  description: 排序方向。
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GenericObject'
+                description: 该接口不使用请求体。
+                required: false
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                allOf:
+                                    - $ref: '#/components/schemas/Envelope'
+                                    - type: object
+                                      properties:
+                                          data:
+                                              $ref: '#/components/schemas/BusinessDefaultConfigFrontendFieldCollection'
+                                          meta:
+                                              $ref: '#/components/schemas/CollectionMeta'
+                    description: 返回前端传参字段集合
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 认证失败
+                "500":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorEnvelope'
+                    description: 服务端内部错误
+            security:
+                - bearerAuth: []
+            summary: 业务默认配置 GET /apis/v1/business-default-config/frontend-fields
+            tags:
+                - 业务默认配置
+            x-controlled-resources:
+                direct:
+                    - server 前端传参 key/value 目录
+                downstream:
+                    - 前端后续写入 AppBackup/AppRestore/DisasterInstance/DisasterOperation/DisasterDrill 请求体
+                scope: 只读目录，无 Kubernetes 资源写入
+            x-operator-chain:
+                controller: 无直接 controller 调用；字段最终由前端通过业务接口写入 CRD spec 后被 operator 消费
+                crd: AppBackup, AppRestore, DisasterInstance, DisasterOperation, DisasterDrill
+                serverFile: internal/apis/business_default_config/v1/router.go
+                serverHandler: h.listFrontendSpecFields
+            x-runapi-target-id: 1cc4b4011d801001
     /apis/v1/system-settings:
         get:
             description: |-
@@ -22940,6 +24293,7 @@ tags:
     - name: 根接口
     - name: 用户管理
     - name: 系统设置
+    - name: 业务默认配置
     - name: 平台许可
     - name: 统计
     - name: 集群管理

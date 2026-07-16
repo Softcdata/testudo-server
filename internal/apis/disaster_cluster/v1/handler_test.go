@@ -752,6 +752,129 @@ func TestPatchCluster_WithVeleroInstallCredentialRotationUpdatesManagedSecret(t 
 	}
 }
 
+func TestPatchCluster_WithEmptyVeleroInstallPasswordKeepsCredential(t *testing.T) {
+	clusterName := "cluster-empty-password-keeps-credential"
+	clusterObj := &dapisv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: clusterName,
+		},
+		Spec: dapisv1.ClusterSpec{
+			Token: "old-token",
+			VeleroInstall: &dapisv1.VeleroInstallSpec{
+				ImageRegistry: "harbor.customer.local/disaster",
+				RegistryCredentialSecretRef: &corev1.LocalObjectReference{
+					Name: managedVeleroRegistrySecretName(clusterName),
+				},
+			},
+		},
+	}
+	h := newMockHandler(clusterObj)
+	oldDockerConfig := `{"auths":{"harbor.customer.local":{"username":"old-user","password":"old-pass","auth":"fake-auth"}}}`
+	_, err := h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      managedVeleroRegistrySecretName(clusterName),
+			Namespace: common.DisasterSystemNamespace,
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(oldDockerConfig),
+		},
+	}, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{{Key: "name", Value: clusterName}}
+	username := "old-user"
+	emptyPassword := ""
+	req := PatchDisasterClusterRequest{
+		VeleroInstall: &PatchVeleroInstallWriteDTO{
+			Username: &username,
+			Password: &emptyPassword,
+		},
+	}
+	body, _ := json.Marshal(req)
+	ctx.Request.SetBody(body)
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.patchCluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	secret, err := h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Get(context.Background(), managedVeleroRegistrySecretName(clusterName), metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Equal(t, oldDockerConfig, string(secret.Data[corev1.DockerConfigJsonKey]))
+
+	updatedCluster, err := h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), clusterName, metav1.GetOptions{})
+	assert.NoError(t, err)
+	if assert.NotNil(t, updatedCluster.Spec.VeleroInstall) {
+		assert.Equal(t, "harbor.customer.local/disaster", updatedCluster.Spec.VeleroInstall.ImageRegistry)
+		if assert.NotNil(t, updatedCluster.Spec.VeleroInstall.RegistryCredentialSecretRef) {
+			assert.Equal(t, managedVeleroRegistrySecretName(clusterName), updatedCluster.Spec.VeleroInstall.RegistryCredentialSecretRef.Name)
+		}
+	}
+	assert.NotContains(t, string(ctx.Response.Body()), "old-pass")
+}
+
+func TestPatchCluster_WithEmptyVeleroInstallUsernameAndPasswordKeepsCredential(t *testing.T) {
+	clusterName := "cluster-empty-user-password-keeps-credential"
+	clusterObj := &dapisv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: clusterName,
+		},
+		Spec: dapisv1.ClusterSpec{
+			VeleroInstall: &dapisv1.VeleroInstallSpec{
+				ImageRegistry: "harbor.customer.local/disaster",
+				RegistryCredentialSecretRef: &corev1.LocalObjectReference{
+					Name: managedVeleroRegistrySecretName(clusterName),
+				},
+			},
+		},
+	}
+	h := newMockHandler(clusterObj)
+	oldDockerConfig := `{"auths":{"harbor.customer.local":{"username":"old-user","password":"old-pass","auth":"fake-auth"}}}`
+	_, err := h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      managedVeleroRegistrySecretName(clusterName),
+			Namespace: common.DisasterSystemNamespace,
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(oldDockerConfig),
+		},
+	}, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{{Key: "name", Value: clusterName}}
+	emptyUsername := ""
+	emptyPassword := ""
+	req := PatchDisasterClusterRequest{
+		VeleroInstall: &PatchVeleroInstallWriteDTO{
+			Username: &emptyUsername,
+			Password: &emptyPassword,
+		},
+	}
+	body, _ := json.Marshal(req)
+	ctx.Request.SetBody(body)
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.patchCluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	secret, err := h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Get(context.Background(), managedVeleroRegistrySecretName(clusterName), metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Equal(t, oldDockerConfig, string(secret.Data[corev1.DockerConfigJsonKey]))
+
+	updatedCluster, err := h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), clusterName, metav1.GetOptions{})
+	assert.NoError(t, err)
+	if assert.NotNil(t, updatedCluster.Spec.VeleroInstall) {
+		assert.Equal(t, "harbor.customer.local/disaster", updatedCluster.Spec.VeleroInstall.ImageRegistry)
+		if assert.NotNil(t, updatedCluster.Spec.VeleroInstall.RegistryCredentialSecretRef) {
+			assert.Equal(t, managedVeleroRegistrySecretName(clusterName), updatedCluster.Spec.VeleroInstall.RegistryCredentialSecretRef.Name)
+		}
+	}
+	assert.NotContains(t, string(ctx.Response.Body()), "old-pass")
+}
+
 func TestPatchCluster_WithVeleroInstallRemoveCredentialDeletesManagedSecret(t *testing.T) {
 	clusterName := "cluster-remove-velero-registry"
 	clusterObj := &dapisv1.Cluster{
@@ -858,8 +981,8 @@ func TestPatchCluster_WithEmptyVeleroInstallImageRegistryClearsConfig(t *testing
 	assert.NotContains(t, string(ctx.Response.Body()), "clear-pass")
 }
 
-func TestPatchCluster_WithEmptyVeleroInstallUsernameClearsCredential(t *testing.T) {
-	clusterName := "cluster-clear-velero-credential"
+func TestPatchCluster_WithEmptyVeleroInstallUsernameKeepsCredential(t *testing.T) {
+	clusterName := "cluster-empty-velero-username-keeps-credential"
 	clusterObj := &dapisv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: clusterName,
@@ -874,6 +997,7 @@ func TestPatchCluster_WithEmptyVeleroInstallUsernameClearsCredential(t *testing.
 		},
 	}
 	h := newMockHandler(clusterObj)
+	oldDockerConfig := `{"auths":{"harbor.customer.local":{"username":"clear-user","password":"clear-pass","auth":"fake-auth"}}}`
 	_, err := h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Create(context.Background(), &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      managedVeleroRegistrySecretName(clusterName),
@@ -881,7 +1005,7 @@ func TestPatchCluster_WithEmptyVeleroInstallUsernameClearsCredential(t *testing.
 		},
 		Type: corev1.SecretTypeDockerConfigJson,
 		Data: map[string][]byte{
-			corev1.DockerConfigJsonKey: []byte(`{"auths":{"harbor.customer.local":{"username":"clear-user","password":"clear-pass","auth":"fake-auth"}}}`),
+			corev1.DockerConfigJsonKey: []byte(oldDockerConfig),
 		},
 	}, metav1.CreateOptions{})
 	assert.NoError(t, err)
@@ -905,13 +1029,16 @@ func TestPatchCluster_WithEmptyVeleroInstallUsernameClearsCredential(t *testing.
 	assert.NoError(t, err)
 	if assert.NotNil(t, updatedCluster.Spec.VeleroInstall) {
 		assert.Equal(t, "harbor.customer.local/disaster", updatedCluster.Spec.VeleroInstall.ImageRegistry)
-		assert.Nil(t, updatedCluster.Spec.VeleroInstall.RegistryCredentialSecretRef)
+		if assert.NotNil(t, updatedCluster.Spec.VeleroInstall.RegistryCredentialSecretRef) {
+			assert.Equal(t, managedVeleroRegistrySecretName(clusterName), updatedCluster.Spec.VeleroInstall.RegistryCredentialSecretRef.Name)
+		}
 	}
-	_, err = h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Get(context.Background(), managedVeleroRegistrySecretName(clusterName), metav1.GetOptions{})
-	assert.True(t, apierrors.IsNotFound(err))
+	secret, err := h.K8sClient.CoreV1().Secrets(common.DisasterSystemNamespace).Get(context.Background(), managedVeleroRegistrySecretName(clusterName), metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Equal(t, oldDockerConfig, string(secret.Data[corev1.DockerConfigJsonKey]))
 	assert.Contains(t, string(ctx.Response.Body()), `"imageRegistry":"harbor.customer.local/disaster"`)
-	assert.Contains(t, string(ctx.Response.Body()), `"credentialConfigured":false`)
-	assert.NotContains(t, string(ctx.Response.Body()), `"username"`)
+	assert.Contains(t, string(ctx.Response.Body()), `"credentialConfigured":true`)
+	assert.Contains(t, string(ctx.Response.Body()), `"username":"clear-user"`)
 	assert.NotContains(t, string(ctx.Response.Body()), "clear-pass")
 }
 

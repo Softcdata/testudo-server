@@ -190,6 +190,17 @@
 - [x] `PATCH /apis/v1/users/:username/password` - RunAPI 状态：缺失，已新增；Target ID：`1c7b4441e6801001`；Handler：`h.patchUserPassword`；类型：HTTP；目标动作：新增接口并写入五段详细说明；处理状态：已完成，已新增并回读验证
 - [x] `PATCH /apis/v1/users/:username/status` - RunAPI 状态：缺失，已新增；Target ID：`1c7b4474d2001001`；Handler：`h.patchUserStatus`；类型：HTTP；目标动作：新增接口并写入五段详细说明；处理状态：已完成，已新增并回读验证
 
+## 业务默认配置
+
+- [x] `GET /api/v1/business-default-config` - RunAPI 状态：缺失，已新增；Target ID：`1cc44c0c5fc01001`；Handler：`h.getSnapshot`；类型：HTTP；目标动作：新增接口并写入业务默认配置快照说明；处理状态：已完成，已新增 live 目标与响应示例
+- [x] `GET /api/v1/business-default-config/fields` - RunAPI 状态：缺失，已新增；Target ID：`1cc44c0c96401001`；Handler：`h.listFields`；类型：HTTP；目标动作：新增接口并写入搜索、筛选、排序、分页说明；处理状态：已完成，已新增 live 目标与响应示例
+- [x] `GET /api/v1/business-default-config/frontend-fields` - RunAPI 状态：已存在；Target ID：`1cc4b3ea76401001`；Handler：`h.listFrontendSpecFields`；类型：HTTP；目标动作：扩展为前端传参字段目录接口，响应 `items` 与 `fieldMap` 均返回字段层级和接口用途；处理状态：已更新 live RunAPI 说明和当前 fieldMap 示例，并回读验证
+- [x] `PATCH /api/v1/business-default-config` - RunAPI 状态：缺失，已新增；Target ID：`1cc44c0cb1801001`；Handler：`h.patchConfig`；类型：HTTP；目标动作：新增接口并写入分组/扁平 key 更新、字段校验和错误 meta 说明；处理状态：已完成，已新增 live 目标、请求体示例与响应示例
+- [x] `GET /apis/v1/business-default-config` - RunAPI 状态：缺失，已新增；Target ID：`1cc44c0ccd401001`；Handler：`h.getSnapshot`；类型：HTTP；目标动作：新增 `/apis` 兼容接口说明；处理状态：已完成，已新增 live 目标
+- [x] `GET /apis/v1/business-default-config/fields` - RunAPI 状态：缺失，已新增；Target ID：`1cc44c0ce8c01000`；Handler：`h.listFields`；类型：HTTP；目标动作：新增 `/apis` 兼容搜索接口说明；处理状态：已完成，已新增 live 目标
+- [x] `GET /apis/v1/business-default-config/frontend-fields` - RunAPI 状态：已存在；Target ID：`1cc4b4011d801001`；Handler：`h.listFrontendSpecFields`；类型：HTTP；目标动作：扩展 `/apis` 兼容前缀为前端传参字段目录接口，响应 `items` 与 `fieldMap` 均返回字段层级和接口用途；处理状态：已更新 live RunAPI 说明和当前 fieldMap 示例，并回读验证
+- [x] `PATCH /apis/v1/business-default-config` - RunAPI 状态：缺失，已新增；Target ID：`1cc44c0d04401001`；Handler：`h.patchConfig`；类型：HTTP；目标动作：新增 `/apis` 兼容更新接口说明；处理状态：已完成，已新增 live 目标、请求体示例与响应示例
+
 ## 系统设置
 
 - [x] `GET /api/v1/system-settings` - RunAPI 状态：已存在；Target ID：`1c31b7bf28801000`；Handler：`h.listSettings`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
@@ -225,7 +236,7 @@
 - [x] `POST /apis/cluster.testudo.softcdata.com/v1/clusters` - RunAPI 状态：已存在；Target ID：`3ee6850538c060 | 69ee1a0f8c0b7`；Handler：`c.createCluster`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
 - [x] `DELETE /apis/cluster.testudo.softcdata.com/v1/clusters/:name` - RunAPI 状态：已存在；Target ID：`25559f2038c06f`；Handler：`c.deleteCluster`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
 - [x] `GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name` - RunAPI 状态：已存在；Target ID：`25559f1fb8c069`；Handler：`c.cluster`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证（`1be22307d0001001` 经回读确认属于 `GET /clusters/names`）
-- [x] `PATCH /apis/cluster.testudo.softcdata.com/v1/clusters/:name` - RunAPI 状态：已存在；Target ID：`1bd502f9fe001000`；Handler：`c.patchCluster`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
+- [x] `PATCH /apis/cluster.testudo.softcdata.com/v1/clusters/:name` - RunAPI 状态：已存在；Target ID：`1bd502f9fe001000`；Handler：`c.patchCluster`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证；2026-07-07 已补充空 `password` 保持既有凭据、`removeCredential=true` 显式删除凭据语义
 - [x] `POST /apis/cluster.testudo.softcdata.com/v1/clusters/:name/actions/refresh-namespaces` - RunAPI 状态：已存在；Target ID：`1c613a8d76001001`；Handler：`c.refreshNamespaces`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
 - [x] `GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name/protected-namespaces` - RunAPI 状态：已存在；Target ID：`1c61734794401001`；Handler：`c.protectedNamespaces`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
 - [x] `GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name/restore-classes` - RunAPI 状态：已存在；Target ID：`1c4bb4e50d001001`；Handler：`c.listRestoreClasses`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
@@ -261,3 +272,8 @@
 
 - [x] `POST /apis/disasterinstances.testudo.softcdata.com/v1/instances` - RunAPI 状态：[已回读 Target ID `1c01f46f55801000`；因长 description 回读被截断，未覆盖原说明；已新增 `rewriteImage` 成功示例和缺少 `sourcePrefix` 的 400 示例]；OpenAPI：[已新增 `rewriteImage` action、`imageRewrite` schema 与纯 rewriteImage 不生成长期 snapshot 说明]；Schema：[DisasterInstanceBulkModifierAction/DisasterInstanceDynamicImageRewrite]；错误：[ModifierRuleRejected: imageRewrite.sourcePrefix/targetPrefix required、unmatchedPolicy、digestPolicy]；operator：[ResourceSync/Drill 运行时动态编译镜像 pair 规则，跳过 forbidden path]
 - [x] `PUT /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name` - RunAPI 状态：[已回读 Target ID `1c01f4718c001000`；因长 description 回读被截断，未覆盖原说明；已新增 `rewriteImage` 成功示例和缺少 `sourcePrefix` 的 400 示例]；OpenAPI：[已更新 update restorePolicy 说明，明确 `rewriteImage` 更新时只保存 DSL、不重算长期 snapshot]；Schema：[同创建接口]；错误：[同创建接口]；operator：[后续恢复构建阶段按源真实镜像动态编译]
+
+## 实例级操作超时 operationTimeoutMinutes
+
+- [x] `POST /apis/disasterinstances.testudo.softcdata.com/v1/instances` - RunAPI 状态：[已通过 Apipost Open API 回读并完整写回 Target ID `1c01f46f55801000`；已追加 description、raw JSON 示例、raw_parameter、raw_schema、`创建成功（含 operationTimeoutMinutes）` 响应示例，并回读验证]；OpenAPI：[已新增 `operationTimeoutMinutes` request/response schema 与创建接口说明]；Schema：[DisasterInstanceCreateRequest/DisasterInstanceDTO]；错误：[不新增错误码]；operator：[写入 `DisasterInstance.spec.operationTimeoutMinutes`，作为实例级操作默认超时，并投影到 DataSync/ResourceSync AppBackup `spec.timeout`]
+- [x] `PUT /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name` - RunAPI 状态：[已通过 Apipost Open API 回读并完整写回 Target ID `1c01f4718c001000`；已追加 description、raw JSON 示例、raw_parameter、raw_schema、`更新成功（调整 operationTimeoutMinutes）` 响应示例，并回读验证]；OpenAPI：[已新增 update request schema 字段说明]；Schema：[DisasterInstanceUpdateRequest/DisasterInstanceDTO]；错误：[不新增错误码]；operator：[未传或 null 保持原值，传整数时更新 `DisasterInstance.spec.operationTimeoutMinutes`，后续 reconcile 同步到相关超时链路]

@@ -9,6 +9,7 @@ import (
 	"github.com/softcdata/testudo-server/configs"
 	appbackupv1 "github.com/softcdata/testudo-server/internal/apis/app_backup/v1"
 	apprestorev1 "github.com/softcdata/testudo-server/internal/apis/app_restore/v1"
+	businessdefaultconfigv1 "github.com/softcdata/testudo-server/internal/apis/business_default_config/v1"
 	deletioncheckv1 "github.com/softcdata/testudo-server/internal/apis/deletion_check/v1"
 	backupv1 "github.com/softcdata/testudo-server/internal/apis/disaster_backup/v1"
 	clusterv1 "github.com/softcdata/testudo-server/internal/apis/disaster_cluster/v1"
@@ -104,6 +105,7 @@ func NewRouter(sh *server.Hertz, kc kube.KubeClient) {
 		statisticsv1.NewStatisticsHandler(&kc, bashPath),
 		deletioncheckv1.NewDeletionCheckHandler(&kc, bashPath),
 		systemsettingsv1.NewSystemSettingsHandler(&kc, bashPath),
+		businessdefaultconfigv1.NewHandler(&kc, bashPath),
 		userv1.NewUserHandler(store, bashPath),
 	}
 
@@ -116,6 +118,7 @@ func NewRouter(sh *server.Hertz, kc kube.KubeClient) {
 	// Alias path for clients that use /api prefix instead of /apis.
 	deletioncheckv1.NewDeletionCheckHandler(&kc, apiPath).Register()
 	systemsettingsv1.NewSystemSettingsHandler(&kc, apiPath).RegisterWithoutPublic()
+	businessdefaultconfigv1.NewHandler(&kc, apiPath).Register()
 	systemsettingsv1.NewSystemSettingsHandler(&kc, apiPublicPath).RegisterPublicOnly()
 	userv1.NewUserHandler(store, apiPath).Register()
 

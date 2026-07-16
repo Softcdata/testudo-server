@@ -427,17 +427,17 @@
 ## POST /apis/disasterinstances.testudo.softcdata.com/v1/instances
 
 - RunAPI Target ID：`1c01f46f55801000`
-- RunAPI 状态：已存在，已更新详细说明，已补齐 `Authorization` header、raw JSON body/schema、当前 201/400/403/409/500 响应示例，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，原说明已保留到 `## 原有说明`，已回读验证；2026-05-22 已追加 `ModifierRuleRejected：replace 缺失最终路径仍拒绝` 400 响应示例；2026-06-15 已在 live RunAPI 前置追加 `bulkModifierActions` 受保护路径扫描修复说明并回读验证
+- RunAPI 状态：已存在，已更新详细说明，已补齐 `Authorization` header、raw JSON body/schema、当前 201/400/403/409/500 响应示例，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，原说明已保留到 `## 原有说明`，已回读验证；2026-05-22 已追加 `ModifierRuleRejected：replace 缺失最终路径仍拒绝` 400 响应示例；2026-06-15 已在 live RunAPI 前置追加 `bulkModifierActions` 受保护路径扫描修复说明并回读验证；2026-07-06 已在 live RunAPI 前置追加临时放开受保护 namespace 冲突校验说明，并移除旧的“命名空间已被保护”409 响应示例；2026-07-07 已在 live RunAPI 前置追加 `modifierRules` 每实例上限从 500 提升到 1000 的说明
 - server 路由：`internal/apis/disaster_instance/v1/router.go`
 - server handler：`internal/apis/disaster_instance/v1/handler.go`，`InstanceHandler.createInstance`
-- 请求链路：`rejectUnsupportedSyncPolicyField(ctx.Request.Body())` -> `BindJSON(CreateDisasterInstanceRequest)` -> `req.ToCRD()` -> `DisasterConfigs().Get(req.Config)` -> `validateProtectedNamespaces(config.Spec.SourceCluster, spec.Namespaces, "", "")` -> `prepareRestorePolicyForPersist(c, &spec, nil)` -> 默认 `namespace=disaster-system` 与 `podRestoreMethod=replica` -> `SetTraceAnnotation` -> `DisasterInstances(ns).Create` -> `ConvertToDisasterInstanceDTO(rc, config, nil)` -> `WriteSuccess(201)`
-- restore policy 解析链路：`ResolveRestorePolicy` 会解析 `resourceSelection`、`execution`、`storageClassMapping`、`ingressClassMapping`、`bulkModifierActions`、`bulkModifierActionsText`、`modifierRules`、`modifierRulesText`、`useUnifiedDirectionResolver`；文本入口与结构化入口同时存在时必须语义一致；资源 include/exclude、modifier rule 结构和 live 路径校验失败都会在创建前返回 `400`；live path 校验按 JSON Patch 语义处理，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 快照生成阶段会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**`，因此镜像值同时出现在 workload spec 和 Pod status 时不会为 status 路径生成快照规则，也不要求用户用 `resourceSelection.excludedResources=["pods"]` 规避
-- live 文档同步：Apipost Target ID `1c01f46f55801000` 已回读完整详情后保留原说明，并在描述前置追加 `2026-06-15 bulkModifierActions 受保护路径扫描修复`，避免覆盖既有 request/response 示例
+- 请求链路：`rejectUnsupportedSyncPolicyField(ctx.Request.Body())` -> `BindJSON(CreateDisasterInstanceRequest)` -> `req.ToCRD()` -> `DisasterConfigs().Get(req.Config)` -> `validateProtectedNamespaces(config.Spec.SourceCluster, spec.Namespaces, "", "")` 当前临时直接放行 -> `prepareRestorePolicyForPersist(c, &spec, nil)` -> 默认 `namespace=disaster-system` 与 `podRestoreMethod=replica` -> `SetTraceAnnotation` -> `DisasterInstances(ns).Create` -> `ConvertToDisasterInstanceDTO(rc, config, nil)` -> `WriteSuccess(201)`
+- restore policy 解析链路：`ResolveRestorePolicy` 会解析 `resourceSelection`、`execution`、`storageClassMapping`、`ingressClassMapping`、`bulkModifierActions`、`bulkModifierActionsText`、`modifierRules`、`modifierRulesText`、`useUnifiedDirectionResolver`；文本入口与结构化入口同时存在时必须语义一致；资源 include/exclude、modifier rule 结构和 live 路径校验失败都会在创建前返回 `400`；当前每实例 `modifierRules` 最多 1000 条，超过时返回 `ModifierRuleRejected: modifier rule count <n> exceeds limit 1000`；live path 校验按 JSON Patch 语义处理，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 快照生成阶段会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**`，因此镜像值同时出现在 workload spec 和 Pod status 时不会为 status 路径生成快照规则，也不要求用户用 `resourceSelection.excludedResources=["pods"]` 规避
+- live 文档同步：Apipost Target ID `1c01f46f55801000` 已回读完整详情后保留原说明，并在描述前置追加 `2026-07-07 modifierRules 上限调整为 1000`；当前回读确认 description 包含该说明，原有 request/response 示例保留
 - operator 链路：创建 `DisasterInstance` 后触发 `DisasterInstanceReconciler`；operator 添加 finalizer、同步依赖 label、把空 `status.fsmState` 初始化为 `Pending`，随后创建/更新 `DataSync` `dr-ds-<instance>` 和 `ResourceSync` `dr-rs-<instance>`，写入主备集群并进入 `Initializing`
 - 下层资源链路：本接口不直接创建 Velero 资源；后续由 `DataSync`/`ResourceSync` controller 基于实例范围和恢复策略驱动 AppBackup/AppRestore、Velero `Backup`、Velero `Restore` 与目标集群 standby 资源
-- 已写入内容：五段详细说明、完整创建入参字段说明、`syncPolicy` 禁用说明、实例级双策略 override 继承语义、受保护命名空间冲突 meta、restorePolicy 嵌套字段和 modifier 规则约束、同步创建响应状态为空/`currentState=Unknown` 的当前实现说明、operator 异步状态推进说明，旧说明完整保留到 `## 原有说明`
+- 已写入内容：五段详细说明、完整创建入参字段说明、`syncPolicy` 禁用说明、实例级双策略 override 继承语义、当前临时允许同一 sourceCluster 下多个实例选择同一业务 namespace、restorePolicy 嵌套字段和 modifier 规则约束、同步创建响应状态为空/`currentState=Unknown` 的当前实现说明、operator 异步状态推进说明，旧说明完整保留到 `## 原有说明`
 - 取证备注：创建接口同步返回的是 API Server 刚写入的对象，operator 通常尚未回写 `status.fsmState`，因此当前实现的同步成功示例按 `status={}` 与 `currentState=Unknown` 写入；原 RunAPI 示例中 `Pending` 类描述保留为历史说明
-- 主要错误点：顶层 `syncPolicy`、JSON/binding、`Config <name> not found`、`ResourceSelectionInvalid`、`ModifierRulesTextInvalid`、`BulkModifierActionsTextInvalid`、`ModifierRulesInputConflict`、`BulkModifierActionsInputConflict`、`ModifierRuleRejected`（例如 `add` 父路径不存在、`replace/remove` 路径不存在、bulk action 过滤受保护路径后没有可执行命中）或 Kubernetes Invalid/BadRequest 返回 `400 code=1000`；受保护命名空间冲突或同名实例返回 `409 code=3009`；RBAC 禁止创建返回 `403 code=2003`；配置读取非 NotFound、保护索引构建或 Kubernetes 创建内部错误返回 `500 code=5000`；operator 后续 `ConfigError`、`PolicyNotReady`、`DataSyncFailed`、`ResourceSyncFailed`、`InitializationFailed` 不作为本接口同步错误返回，只通过状态接口、详情、列表或 watch 体现
+- 主要错误点：顶层 `syncPolicy`、JSON/binding、`Config <name> not found`、`ResourceSelectionInvalid`、`ModifierRulesTextInvalid`、`BulkModifierActionsTextInvalid`、`ModifierRulesInputConflict`、`BulkModifierActionsInputConflict`、`ModifierRuleRejected`（例如 `add` 父路径不存在、`replace/remove` 路径不存在、bulk action 过滤受保护路径后没有可执行命中）或 Kubernetes Invalid/BadRequest 返回 `400 code=1000`；同名实例返回 `409 code=3009`；RBAC 禁止创建返回 `403 code=2003`；配置读取非 NotFound 或 Kubernetes 创建内部错误返回 `500 code=5000`；operator 后续 `ConfigError`、`PolicyNotReady`、`DataSyncFailed`、`ResourceSyncFailed`、`InitializationFailed` 不作为本接口同步错误返回，只通过状态接口、详情、列表或 watch 体现
 
 ## DELETE /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name
 
@@ -469,17 +469,17 @@
 ## PUT /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name
 
 - RunAPI Target ID：`1c01f4718c001000`
-- RunAPI 状态：已存在，已更新详细说明，已补齐 `Authorization`、`Content-Type` header、`name` path 参数、`namespace` query 参数、raw JSON body/schema 和当前 200/400/403/404/409/500 响应示例，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，原说明已保留到 `## 原有说明`，已回读验证；2026-05-22 已追加 `ModifierRuleRejected：replace 缺失最终路径仍拒绝` 400 响应示例；2026-06-15 已在 live RunAPI 前置追加 `bulkModifierActions` 受保护路径扫描修复说明并回读验证
+- RunAPI 状态：已存在，已更新详细说明，已补齐 `Authorization`、`Content-Type` header、`name` path 参数、`namespace` query 参数、raw JSON body/schema 和当前 200/400/403/404/409/500 响应示例，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，原说明已保留到 `## 原有说明`，已回读验证；2026-05-22 已追加 `ModifierRuleRejected：replace 缺失最终路径仍拒绝` 400 响应示例；2026-06-15 已在 live RunAPI 前置追加 `bulkModifierActions` 受保护路径扫描修复说明并回读验证；2026-07-06 已在 live RunAPI 前置追加临时放开受保护 namespace 冲突校验说明，并移除旧的“命名空间已被保护”409 响应示例；2026-07-07 已在 live RunAPI 前置追加 `modifierRules` 每实例上限从 500 提升到 1000 的说明
 - server 路由：`internal/apis/disaster_instance/v1/router.go`
 - server handler：`internal/apis/disaster_instance/v1/handler.go`，`InstanceHandler.updateInstance`
-- 请求链路：`path.name` -> `rejectUnsupportedSyncPolicyField` -> `BindJSON(UpdateDisasterInstanceRequest)` -> `ResolveRestorePolicy` -> 可选 `query.namespace` 或 `findNamespace` -> `RetryOnConflict` 中读取现有实例 -> 按出现字段更新 spec/annotation -> 重新做受保护 namespace 冲突校验 -> 按出现的 `restorePolicy` 子字段合并 -> 必要时 `prepareRestorePolicyForPersist` -> `Update` -> 尽力读取 `DisasterConfig` -> `ConvertToDisasterInstanceDTO` -> `WriteSuccess(200)`
+- 请求链路：`path.name` -> `rejectUnsupportedSyncPolicyField` -> `BindJSON(UpdateDisasterInstanceRequest)` -> `ResolveRestorePolicy` -> 可选 `query.namespace` 或 `findNamespace` -> `RetryOnConflict` 中读取现有实例 -> 按出现字段更新 spec/annotation -> `validateProtectedNamespaces` 当前临时直接放行 -> 按出现的 `restorePolicy` 子字段合并 -> 必要时 `prepareRestorePolicyForPersist` -> `Update` -> 尽力读取 `DisasterConfig` -> `ConvertToDisasterInstanceDTO` -> `WriteSuccess(200)`
 - 更新语义：`dataSyncPolicy/resourceSyncPolicy` 未传或 `null` 保持原值，空字符串清空 override；`namespaces` 未传或 `null` 保持原值，空数组清空；`labelSelector` 未传或 `null` 保持原值，传对象整体替换；`description` 空字符串清空；`restorePolicy` 未传或 `null` 不更新，传对象时只合并对象中出现的子字段
 - operator 链路：更新 CRD 后触发 `DisasterInstanceReconciler`；operator 继续同步 dependency labels，按实例 override 或配置继承值更新 `DataSync`/`ResourceSync` schedule，后续 DataSync/ResourceSync/Drill 使用更新后的恢复策略构建 AppRestore
-- 下层资源链路：更新接口不直接访问 Velero 或业务集群；只有在 bulk modifier 需要重建快照或 modifier rule live 校验时，server 会读取源集群资源来验证和生成 `modifierRuleSnapshot`；live path 校验按 JSON Patch 语义处理，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 快照生成阶段会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**`，因此镜像值同时出现在 workload spec 和 Pod status 时不会为 status 路径生成快照规则，也不要求用户用 `resourceSelection.excludedResources=["pods"]` 规避
-- live 文档同步：Apipost Target ID `1c01f4718c001000` 已回读完整详情后保留原说明，并在描述前置追加 `2026-06-15 bulkModifierActions 受保护路径扫描修复`，避免覆盖既有 request/response 示例
-- 已写入内容：五段详细说明、全部可更新字段的未传/null/空值语义、`restorePolicy` 子字段合并和清空语义、modifier 文本入口与结构化入口冲突规则、namespace 冲突 meta、响应 DTO 和当前错误分类
-- 取证备注：该接口使用 `RetryOnConflict`，但最终返回的 Kubernetes resourceVersion 冲突未单独映射为 `409`；除受保护 namespace 冲突外，重试耗尽后会进入通用 `500 code=5000`
-- 主要错误点：顶层 `syncPolicy`、JSON/binding、现有实例 `spec.config` 无法通过 lister 找到、恢复策略校验失败（例如 `add` 父路径不存在、`replace/remove` 路径不存在、bulk action 过滤受保护路径后没有可执行命中）或 Kubernetes Invalid/BadRequest 返回 `400 code=1000`；目标不存在返回 `404 code=3004`；受保护命名空间冲突返回 `409 code=3009`；RBAC 禁止更新返回 `403 code=2003`；重试耗尽、读取或更新 CRD 非分类错误返回 `500 code=5000`；operator 后续失败只体现在实例状态字段中
+- 下层资源链路：更新接口不直接访问 Velero 或业务集群；只有在 bulk modifier 需要重建快照或 modifier rule live 校验时，server 会读取源集群资源来验证和生成 `modifierRuleSnapshot`；当前每实例 `modifierRules` 最多 1000 条，超过时返回 `ModifierRuleRejected: modifier rule count <n> exceeds limit 1000`；live path 校验按 JSON Patch 语义处理，`add` 允许最终一级 map key 不存在但父路径必须存在，`replace/remove` 要求完整路径存在；bulk 快照生成阶段会跳过 `/status/**`、`/metadata/finalizers/**`、`/metadata/ownerReferences/**`，因此镜像值同时出现在 workload spec 和 Pod status 时不会为 status 路径生成快照规则，也不要求用户用 `resourceSelection.excludedResources=["pods"]` 规避
+- live 文档同步：Apipost Target ID `1c01f4718c001000` 已回读完整详情后保留原说明，并在描述前置追加 `2026-07-07 modifierRules 上限调整为 1000`；当前回读确认 description 包含该说明，原有 request/response 示例保留
+- 已写入内容：五段详细说明、全部可更新字段的未传/null/空值语义、`restorePolicy` 子字段合并和清空语义、modifier 文本入口与结构化入口冲突规则、当前临时允许同一 sourceCluster 下多个实例选择同一业务 namespace、响应 DTO 和当前错误分类
+- 取证备注：该接口使用 `RetryOnConflict`，但最终返回的 Kubernetes resourceVersion 冲突未单独映射为 `409`；重试耗尽后会进入通用 `500 code=5000`
+- 主要错误点：顶层 `syncPolicy`、JSON/binding、现有实例 `spec.config` 无法通过 lister 找到、恢复策略校验失败（例如 `add` 父路径不存在、`replace/remove` 路径不存在、bulk action 过滤受保护路径后没有可执行命中）或 Kubernetes Invalid/BadRequest 返回 `400 code=1000`；目标不存在返回 `404 code=3004`；RBAC 禁止更新返回 `403 code=2003`；重试耗尽、读取或更新 CRD 非分类错误返回 `500 code=5000`；operator 后续失败只体现在实例状态字段中
 
 ## POST /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name/actions
 
@@ -1988,14 +1988,14 @@
 ## PATCH /apis/cluster.testudo.softcdata.com/v1/clusters/:name
 
 - RunAPI Target ID：`1bd502f9fe001000`
-- RunAPI 状态：已存在，已更新详细说明，URL 已由固定 `/clusters/master01` 修正为 `/clusters/:name`，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，已补齐必填 `Authorization` 与 `Content-Type` header、path `name`、当前支持的 JSON body 字段和 `200/400/404/500` 响应示例，原说明已保留到 `## 原有说明`，已回读验证；2026-06-01 追加 `veleroInstall.username` 回显成功响应示例，并追加 `username=""` 清空凭据、`imageRegistry=""` 清空配置两个成功响应示例
+- RunAPI 状态：已存在，已更新详细说明，URL 已由固定 `/clusters/master01` 修正为 `/clusters/:name`，鉴权类型已从历史 `noauth` 修正为继承项目鉴权，已补齐必填 `Authorization` 与 `Content-Type` header、path `name`、当前支持的 JSON body 字段和 `200/400/404/500` 响应示例，原说明已保留到 `## 原有说明`，已回读验证；2026-06-01 追加 `veleroInstall.username` 回显成功响应示例和 `imageRegistry=""` 清空配置成功响应示例；2026-07-07 调整为 PATCH 空 `password`/空 `username` 均保持既有凭据，显式删除凭据使用 `removeCredential=true`
 - server 路由：`internal/apis/disaster_cluster/v1/router.go`，`PATCH /apis/cluster.testudo.softcdata.com/v1/clusters/:name`
 - server handler：`internal/apis/disaster_cluster/v1/handler.go`，`ClusterHandler.patchCluster`
-- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> 读取 path `name` -> `BindJSON(PatchDisasterClusterRequest)` -> `Clusters().Get` -> 按指针字段局部更新 `token/tag/description/imageSources/veleroInstall` -> `imageRegistry=""` 清空整段 Velero 安装配置 -> `username=""` 清空 registry 凭据并保留镜像源 -> 可选创建/更新/删除管理面 registry Secret -> 无支持字段时通过 `convertToDisasterClusterDTO` 直接返回当前 DTO -> 有更新时写入 trace/user annotation -> `Clusters().Update` -> `convertToDisasterClusterDTO` -> 若引用 server 管理的 Velero registry Secret 则解析 username -> `transport.WriteSuccess(200)`
+- 请求链路：`/apis` 分组 `WebSocketTokenAdapter` -> 非 `dev` 环境 JWT 中间件 -> `TraceMiddleware` -> 读取 path `name` -> `BindJSON(PatchDisasterClusterRequest)` -> `Clusters().Get` -> 按指针字段局部更新 `token/tag/description/imageSources/veleroInstall` -> `imageRegistry=""` 清空整段 Velero 安装配置 -> `password` 非空且 `username` 非空时轮换管理面 registry Secret -> `password` 为空或未携带时保持既有 registry Secret -> `removeCredential=true` 删除 registry Secret 并清空引用 -> 无支持字段时通过 `convertToDisasterClusterDTO` 直接返回当前 DTO -> 有更新时写入 trace/user annotation -> `Clusters().Update` -> `convertToDisasterClusterDTO` -> 若引用 server 管理的 Velero registry Secret 则解析 username -> `transport.WriteSuccess(200)`
 - operator 链路：本接口更新 CR 后由 `ClusterReconciler` 异步处理 generation 或 metadata 变化，发射编辑集群事件，重新构建目标集群客户端、同步 Velero registry Secret 到目标集群、必要时执行 Velero install/upgrade 检查，随后刷新状态、token 过期时间和统计字段；HTTP 响应不等待 reconcile
 - 下层资源链路：server 同步读写管理集群 `Cluster` CR 和可选 `disaster-system/cluster-velero-regcred-<clusterName>` Secret；operator 后续访问目标 Kubernetes 集群和 Velero 资源进行同步与状态刷新
-- 已写入内容：五段详细说明、JWT/JSON header、path `name`、`token/tag/description/imageSources/veleroInstall` 全字段更新语义、`endpoint/kubeConfig` 不支持 PATCH 的事实、Secret 轮换/移除规则、`imageRegistry=""` 和 `username=""` 显式清空语义、`username` 可回显和 `password` 不回显的 DTO 脱敏返回、operator 异步编辑链路、当前错误分类
-- 取证备注：`tag=""` 会删除 cluster tag label，`description=""` 会删除备注 annotation，`imageSources: []` 会清空镜像源目录，`veleroInstall.imageRegistry=""` 会清空整段 Velero 安装配置，`veleroInstall.username=""` 会清空 registry 凭据；请求体没有任何支持字段时返回 200 当前 DTO，但不会执行 Update，也不会写 trace/user annotation
+- 已写入内容：五段详细说明、JWT/JSON header、path `name`、`token/tag/description/imageSources/veleroInstall` 全字段更新语义、`endpoint/kubeConfig` 不支持 PATCH 的事实、Secret 轮换/移除规则、`imageRegistry=""` 清空配置语义、`password=""` 保持凭据语义、`removeCredential=true` 显式清空凭据语义、`username` 可回显和 `password` 不回显的 DTO 脱敏返回、operator 异步编辑链路、当前错误分类
+- 取证备注：`tag=""` 会删除 cluster tag label，`description=""` 会删除备注 annotation，`imageSources: []` 会清空镜像源目录，`veleroInstall.imageRegistry=""` 会清空整段 Velero 安装配置，`veleroInstall.password=""` 和 `veleroInstall.username=""` 均不会删除 registry 凭据；请求体没有任何支持字段时返回 200 当前 DTO，但不会执行 Update，也不会写 trace/user annotation
 - 主要错误点：JWT 失败由中间件返回 `401/403`；JSON、imageSources、veleroInstall 或 Kubernetes 对象校验失败返回 `400 code=1000`；目标 Cluster 不存在返回 `404 code=3004`；读取 Cluster、管理面 registry Secret 或更新 Cluster CR 的下层错误返回 `500 code=5000`
 
 ## POST /apis/cluster.testudo.softcdata.com/v1/clusters/:name/actions/refresh-namespaces
@@ -2190,3 +2190,40 @@
 - 快照语义：纯 `rewriteImage` 场景 `modifierRuleSnapshot` 和 `modifierRuleSnapshotHash` 为空；混合静态 action 与 `rewriteImage` 时仅静态 action 生成快照，`rewriteImage` 原始 DSL 保留在 `bulkModifierActions` 和 `bulkModifierActionsText` 中。
 - OpenAPI 状态：已更新 `openspec/specs/disaster-server-openapi.yaml`，新增 `DisasterInstanceBulkModifierAction`、`DisasterInstanceDynamicImageRewrite`、`DisasterInstanceBulkModifierActionType` 等 schema，并更新创建/更新接口 restorePolicy 与 `modifierRuleSnapshot` 说明。
 - 主要错误点：缺少 `imageRewrite`、缺少 `imageRewrite.sourcePrefix`、缺少 `imageRewrite.targetPrefix`、非法 `unmatchedPolicy`、非法 `digestPolicy` 均返回 `400 code=1000` 且 message 包含 `ModifierRuleRejected`；不再返回 `unsupported action=rewriteImage`。
+
+## DisasterInstance operationTimeoutMinutes 实例级超时字段
+
+- RunAPI 状态：2026-06-30 已通过 Apipost Open API 回读并完整写回 `POST /apis/disasterinstances.testudo.softcdata.com/v1/instances` Target ID `1c01f46f55801000` 与 `PUT /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name` Target ID `1c01f4718c001000`；已保留两个接口原有长 description、request、response examples，并前置追加 `operationTimeoutMinutes` 超时字段说明。
+- live 回读验证：两个目标均确认 `description` 包含 `operationTimeoutMinutes 超时字段补充`，`request.body.raw` 包含 `operationTimeoutMinutes: 300`，`request.body.raw_parameter` 包含 `operationTimeoutMinutes` 字段，`request.body.raw_schema.properties.operationTimeoutMinutes` 存在；创建接口新增响应示例 `创建成功（含 operationTimeoutMinutes）`，更新接口新增响应示例 `更新成功（调整 operationTimeoutMinutes）`。
+- server 路由：`internal/apis/disaster_instance/v1/router.go`，`POST /apis/disasterinstances.testudo.softcdata.com/v1/instances` 与 `PUT /apis/disasterinstances.testudo.softcdata.com/v1/instances/:name`。
+- server handler：`internal/apis/disaster_instance/v1/handler.go`，`h.createInstance` / `h.updateInstance`。
+- 请求链路：创建接口 `BindJSON(CreateDisasterInstanceRequest)` -> `ToCRD()` -> 写入 `DisasterInstance.spec.operationTimeoutMinutes`；更新接口 `BindJSON(UpdateDisasterInstanceRequest)` -> 字段 presence 判断 -> 出现 `operationTimeoutMinutes` 时更新 `existing.Spec.OperationTimeoutMinutes`，未出现时保持原值。
+- operator/resource 链路：`DisasterInstance.spec.operationTimeoutMinutes` 是实例级操作默认超时；operator 在实例初始化、DataSync、ResourceSync、DisasterOperation 等链路读取该值；当前 operator 还将该值投影到 DataSync/ResourceSync 管理的 AppBackup `spec.timeout`，用于覆盖 AppBackup 默认等待窗口。恢复侧 Velero item operation timeout 仍由 `restorePolicy.execution.itemOperationTimeout` 控制。
+- 字段契约：`operationTimeoutMinutes` 为 integer/int32，单位分钟；创建时非必传，未传时由 CRD/operator 默认 `60` 分钟兜底；更新时未传或 `null` 保持原值，传整数时更新。大容量 PV/FSB 首次同步场景建议显式设置，例如 `300` 表示 5 小时。
+- OpenAPI 状态：`openspec/specs/disaster-server-openapi.yaml` 已在 `DisasterInstanceDTO`、`DisasterInstanceCreateRequest`、`DisasterInstanceUpdateRequest` schema 以及创建接口说明中补充 `operationTimeoutMinutes`。
+
+## 业务默认配置 API
+
+- RunAPI 状态：2026-07-03 已通过 Apipost MCP 新增文件夹 `业务默认配置`，Target ID `1cc44bce7b801000`，并新增 8 个 HTTP API 目标。
+- RunAPI Target ID：
+  - `GET /api/v1/business-default-config`：`1cc44c0c5fc01001`
+  - `GET /api/v1/business-default-config/fields`：`1cc44c0c96401001`
+  - `GET /api/v1/business-default-config/frontend-fields`：`1cc4b3ea76401001`
+  - `PATCH /api/v1/business-default-config`：`1cc44c0cb1801001`
+  - `GET /apis/v1/business-default-config`：`1cc44c0ccd401001`
+  - `GET /apis/v1/business-default-config/fields`：`1cc44c0ce8c01000`
+  - `GET /apis/v1/business-default-config/frontend-fields`：`1cc4b4011d801001`
+  - `PATCH /apis/v1/business-default-config`：`1cc44c0d04401001`
+- server 路由：`internal/apis/business_default_config/v1/router.go`
+- server handler：`h.getSnapshot`、`h.listFields`、`h.listFrontendSpecFields`、`h.patchConfig`
+- 请求链路：
+  - 快照查询：`getConfigDocument` -> `decodeConfigDocument` -> 字段目录合成 `BusinessDefaultConfigSnapshot` -> `transport.WriteSuccess`
+  - 字段列表：`transport.ParseOptions` -> `fieldDTOs` -> `keyword/groupKey/editable/effectMode` 过滤 -> 排序分页 -> `transport.BuildCollectionResponse`
+  - 前端传参 key/value 目录：`transport.ParseOptions` -> `frontendSpecFieldDTOs` -> `keyword/q` 只匹配 `key` 与 `value` -> 排序分页 -> 清理 unsupported filters -> `transport.BuildCollectionResponse`
+  - 更新：`parsePatchRequest` -> 字段目录查找 -> 类型/范围/只读/跨字段校验 -> `mutateConfigDocument` -> ConfigMap create/update -> 返回最新快照
+- operator 链路：接口本身不直接写 `OperatorRuntimeConfig`，不触发 operator reconcile；运行时配置字段目录、默认值和边界对齐 disaster-operator runtime config；前端传参字段目录对齐 operator Layer 1/Layer 2 边界，字段最终由前端后续写入 `AppBackup`、`AppRestore`、`DisasterInstance`、`DisasterOperation`、`DisasterDrill` 请求体或 CRD `spec`。
+- 下层资源：管理命名空间 ConfigMap `disaster-business-default-config`，data key `config`。
+- 已写入内容：RunAPI live 新增接口说明、请求体示例、响应示例、前端传参字段目录查询参数；OpenAPI 新增 path、schema、参数、响应和错误语义；本地 evidence/checklist 已记录 Target ID。
+- 2026-07-03 追踪更新：`GET /api/v1/business-default-config/frontend-fields` 与 `GET /apis/v1/business-default-config/frontend-fields` 已按前端要求收敛为只返回 `key`、`value`；`keyword/q` 只搜索 `key/value`；旧的 `resourceKind`、`configGroupKey`、`dataType`、`editable`、`serverSupported`、`operation` 筛选不再作为支持参数宣传，也不会在响应 `meta.filters` 中回显。RunAPI live 已新增“key 写入映射表”，说明每个 key 应写入哪个业务接口、请求字段和最终 CRD 字段，并新增当前 key/value 成功示例。
+- 2026-07-07 追踪更新：`GET /api/v1/business-default-config/frontend-fields` 与 `GET /apis/v1/business-default-config/frontend-fields` 响应扩展为 `data.items[]` + `data.fieldMap`。每个字段保留 `key/value`，并新增 `name`、`description`、`resourceKind`、`requestPath`、`specPath`、`keySegments`、`requestPathSegments`、`specPathSegments`、`apiUsages`、`serverSupported`、`note`，前端可直接通过 `fieldMap["operation.timeoutMinutes"]` 获取字段层级和使用接口。OpenAPI 与本地 checklist 已更新；live RunAPI 已更新说明和“当前成功示例（含 fieldMap 与字段层级）”，Target ID `1cc4b3ea76401001` 与 `1cc4b4011d801001` 均已回读验证。
+- 主要错误点：空 body、非 JSON object、未知字段、只读字段、duration/int 类型错误、范围越界、`transitionWatchdogTimeout < minTransitionWatchdogTimeout` 返回 `400 code=1000`；非 admin 用户 PATCH 返回 `403 code=2003`；ConfigMap 冲突返回 `409 code=3009`；ConfigMap 读取或存储文档损坏返回 `500 code=5000`。

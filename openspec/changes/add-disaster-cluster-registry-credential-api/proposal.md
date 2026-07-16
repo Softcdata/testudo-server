@@ -28,8 +28,8 @@
 - 修改镜像源前缀：覆盖 `imageRegistry`
 - 修改凭据：轮换 Secret 内容
 - 清空镜像源配置：PATCH 显式提交 `veleroInstall.imageRegistry=""`，删除 server 管理的 Secret 并清空整段 `Cluster.spec.veleroInstall`
-- 删除凭据：提交 `removeCredential=true`；PATCH 显式提交 `veleroInstall.username=""` 时执行同一删除语义，删除 server 管理的 Secret 并清空引用
-- 请求未携带凭据：保持现状，不视为清空
+- 删除凭据：提交 `removeCredential=true`，删除 server 管理的 Secret 并清空引用
+- 请求未携带凭据，或 PATCH 中携带空 `password`：保持现状，不视为清空，也不轮换 Secret
 
 ### 5. E2E 验收以真实 API 黑盒链路为准
 - 联调入口固定为 cluster create/patch API，不直接伪造 handler 内部输入。

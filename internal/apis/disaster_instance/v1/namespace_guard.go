@@ -66,6 +66,10 @@ func (h *InstanceHandler) validateProtectedNamespaces(
 	excludeNamespace string,
 	excludeName string,
 ) error {
+	// Temporarily allow multiple DisasterInstances to protect the same namespace.
+	// Keep the old guard code below for quick rollback after the test window.
+	return nil
+
 	sourceCluster = strings.TrimSpace(sourceCluster)
 	if sourceCluster == "" {
 		return nil

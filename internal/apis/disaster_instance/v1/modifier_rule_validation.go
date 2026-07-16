@@ -12,7 +12,7 @@ import (
 const (
 	modifierRuleRejectedCode = "ModifierRuleRejected"
 
-	maxModifierRulesPerInstance = 200
+	maxModifierRulesPerInstance = 1000
 	maxPatchesPerModifierRule   = 50
 	maxJSONPointerDepth         = 32
 )

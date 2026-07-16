@@ -164,6 +164,16 @@
 - [ ] `DELETE /apis/v1/users/:username` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
 - [ ] `PATCH /apis/v1/users/:username/password` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
 - [ ] `PATCH /apis/v1/users/:username/status` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
+## 业务默认配置
+
+- [x] `GET /api/v1/business-default-config` - RunAPI：[已新增 Target ID `1cc44c0c5fc01001`]；OpenAPI：[已补详细说明]；Schema：[BusinessDefaultConfigSnapshot/Field/Group 已确认]；错误：[401/500 已确认]；operator：[无直接 operator 调用，字段语义对齐 OperatorRuntimeConfig]
+- [x] `GET /api/v1/business-default-config/fields` - RunAPI：[已新增 Target ID `1cc44c0c96401001`]；OpenAPI：[已补搜索、筛选、分页、排序说明]；Schema：[BusinessDefaultConfigFieldCollection 已确认]；错误：[400/401/500 已确认]；operator：[无直接 operator 调用]
+- [x] `GET /api/v1/business-default-config/frontend-fields` - RunAPI：[Target ID `1cc4b3ea76401001` 已更新，RunAPI 描述包含 key 到业务接口字段映射表]；OpenAPI：[已收敛为 key/value 搜索、分页、排序说明]；Schema：[BusinessDefaultConfigFrontendFieldCollection 只包含 `key`、`value`]；错误：[401/500 已确认]；operator：[无直接 operator 调用，前端后续按 RunAPI 映射表写入业务请求体]
+- [x] `PATCH /api/v1/business-default-config` - RunAPI：[已新增 Target ID `1cc44c0cb1801001`]；OpenAPI：[已补请求体、响应和字段错误 meta]；Schema：[BusinessDefaultConfigPatchRequest/FieldErrorMeta 已确认]；错误：[400/401/403/409/500 已确认]；operator：[无直接 operator 调用，前端后续把默认值写入业务请求体]
+- [x] `GET /apis/v1/business-default-config` - RunAPI：[已新增 Target ID `1cc44c0ccd401001`]；OpenAPI：[已补兼容前缀说明]；Schema：[同 `/api` 快照接口]；错误：[同 `/api` 快照接口]；operator：[无直接 operator 调用]
+- [x] `GET /apis/v1/business-default-config/fields` - RunAPI：[已新增 Target ID `1cc44c0ce8c01000`]；OpenAPI：[已补兼容前缀说明]；Schema：[同 `/api` 字段集合接口]；错误：[同 `/api` 字段集合接口]；operator：[无直接 operator 调用]
+- [x] `GET /apis/v1/business-default-config/frontend-fields` - RunAPI：[Target ID `1cc4b4011d801001` 已更新，RunAPI 描述包含 key 到业务接口字段映射表]；OpenAPI：[已补兼容前缀 key/value 说明]；Schema：[同 `/api` 前端传参 key/value 接口]；错误：[同 `/api` 前端传参 key/value 接口]；operator：[无直接 operator 调用]
+- [x] `PATCH /apis/v1/business-default-config` - RunAPI：[已新增 Target ID `1cc44c0d04401001`]；OpenAPI：[已补兼容前缀说明]；Schema：[同 `/api` 更新接口]；错误：[同 `/api` 更新接口]；operator：[无直接 operator 调用]
 ## 系统设置
 
 - [ ] `GET /api/v1/system-settings` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
@@ -197,7 +207,7 @@
 - [ ] `POST /apis/cluster.testudo.softcdata.com/v1/clusters` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
 - [ ] `DELETE /apis/cluster.testudo.softcdata.com/v1/clusters/:name` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
 - [ ] `GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
-- [ ] `PATCH /apis/cluster.testudo.softcdata.com/v1/clusters/:name` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
+- [ ] `PATCH /apis/cluster.testudo.softcdata.com/v1/clusters/:name` - RunAPI：[已存在]；OpenAPI：[已补骨架，2026-07-07 已补充空 `password` 保持凭据语义]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
 - [ ] `POST /apis/cluster.testudo.softcdata.com/v1/clusters/:name/actions/refresh-namespaces` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
 - [ ] `GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name/protected-namespaces` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
 - [ ] `GET /apis/cluster.testudo.softcdata.com/v1/clusters/:name/restore-classes` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]

@@ -124,6 +124,32 @@ func validateVeleroInstallWriteRequest(imageRegistry, username, password string,
 	return nil
 }
 
+func validateVeleroInstallPatchRequest(imageRegistry string, usernameProvided bool, username string, passwordProvided bool, password string, removeCredential bool) error {
+	imageRegistry = normalizeVeleroImageRegistry(imageRegistry)
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+
+	if strings.Contains(imageRegistry, "://") {
+		return fmt.Errorf("veleroInstall.imageRegistry must not include a URL scheme")
+	}
+	if password == "" {
+		return nil
+	}
+	if removeCredential {
+		return fmt.Errorf("veleroInstall.removeCredential and username/password are mutually exclusive")
+	}
+	if !usernameProvided || username == "" {
+		return fmt.Errorf("veleroInstall.username and password must be provided together")
+	}
+	if !passwordProvided {
+		return fmt.Errorf("veleroInstall.username and password must be provided together")
+	}
+	if imageRegistry == "" {
+		return fmt.Errorf("veleroInstall.imageRegistry is required when username/password are provided")
+	}
+	return nil
+}
+
 func registryAuthServer(imageRegistry string) string {
 	imageRegistry = normalizeVeleroImageRegistry(imageRegistry)
 	if imageRegistry == "" {
@@ -1038,22 +1064,24 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 			effectiveImageRegistry = normalizeVeleroImageRegistry(*req.VeleroInstall.ImageRegistry)
 		}
 
+		usernameProvided := req.VeleroInstall.Username != nil
 		username := ""
 		if req.VeleroInstall.Username != nil {
 			username = *req.VeleroInstall.Username
 		}
+		passwordProvided := req.VeleroInstall.Password != nil
 		password := ""
 		if req.VeleroInstall.Password != nil {
 			password = *req.VeleroInstall.Password
 		}
 		removeCredential := req.VeleroInstall.RemoveCredential != nil && *req.VeleroInstall.RemoveCredential
-		if err := validateVeleroInstallWriteRequest(effectiveImageRegistry, username, password, removeCredential); err != nil {
+		if err := validateVeleroInstallPatchRequest(effectiveImageRegistry, usernameProvided, username, passwordProvided, password, removeCredential); err != nil {
 			transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), nil)
 			return
 		}
 
 		clearVeleroInstall := imageRegistryProvided && effectiveImageRegistry == ""
-		clearCredential := removeCredential || (req.VeleroInstall.Username != nil && strings.TrimSpace(username) == "")
+		clearCredential := removeCredential
 
 		if clearVeleroInstall {
 			if oldManagedSecret {
@@ -1074,7 +1102,7 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 			updated = true
 		}
 
-		if strings.TrimSpace(username) != "" || strings.TrimSpace(password) != "" {
+		if strings.TrimSpace(password) != "" {
 			secretRef, _, err := cluster.upsertManagedVeleroRegistrySecret(c, common.DisasterSystemNamespace, existing.Name, effectiveImageRegistry, username, password)
 			if err != nil {
 				transport.WriteError(ctx, transport.CodeInternalServerError, err.Error(), nil)

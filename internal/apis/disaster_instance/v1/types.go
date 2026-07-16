@@ -61,6 +61,7 @@ type DisasterInstanceSpecDTO struct {
 	ResourceSyncPolicySource    string                       `json:"resourceSyncPolicySource,omitempty"`
 	Namespaces                  []string                     `json:"namespaces,omitempty"`
 	LabelSelector               *metav1.LabelSelector        `json:"labelSelector,omitempty"`
+	OperationTimeoutMinutes     int32                        `json:"operationTimeoutMinutes,omitempty"`
 	PodRestoreMethod            string                       `json:"podRestoreMethod,omitempty"`
 	RestorePolicy               *RestorePolicyDTO            `json:"restorePolicy,omitempty"`
 	VeleroHooks                 *dapisv1.DisasterVeleroHooks `json:"veleroHooks,omitempty"`
@@ -218,30 +219,32 @@ type AutoCancelSummaryDTO struct {
 // Request DTOs
 
 type CreateDisasterInstanceRequest struct {
-	Name               string                                  `json:"name" binding:"required"`
-	Namespace          string                                  `json:"namespace"` // CR Namespace
-	Config             string                                  `json:"config" binding:"required"`
-	DataSyncPolicy     *string                                 `json:"dataSyncPolicy,omitempty"`
-	ResourceSyncPolicy *string                                 `json:"resourceSyncPolicy,omitempty"`
-	Namespaces         []string                                `json:"namespaces,omitempty"`
-	LabelSelector      *metav1.LabelSelector                   `json:"labelSelector,omitempty"`
-	PodRestoreMethod   string                                  `json:"podRestoreMethod,omitempty"`
-	RestorePolicy      *RestorePolicyRequest                   `json:"restorePolicy,omitempty"`
-	VeleroHooks        *velerohooks.DisasterVeleroHooksRequest `json:"veleroHooks,omitempty"`
-	SkipPodReadyCheck  *bool                                   `json:"skipPodReadyCheck,omitempty"`
-	Description        string                                  `json:"description,omitempty"`
+	Name                    string                                  `json:"name" binding:"required"`
+	Namespace               string                                  `json:"namespace"` // CR Namespace
+	Config                  string                                  `json:"config" binding:"required"`
+	DataSyncPolicy          *string                                 `json:"dataSyncPolicy,omitempty"`
+	ResourceSyncPolicy      *string                                 `json:"resourceSyncPolicy,omitempty"`
+	Namespaces              []string                                `json:"namespaces,omitempty"`
+	LabelSelector           *metav1.LabelSelector                   `json:"labelSelector,omitempty"`
+	OperationTimeoutMinutes int32                                   `json:"operationTimeoutMinutes,omitempty"`
+	PodRestoreMethod        string                                  `json:"podRestoreMethod,omitempty"`
+	RestorePolicy           *RestorePolicyRequest                   `json:"restorePolicy,omitempty"`
+	VeleroHooks             *velerohooks.DisasterVeleroHooksRequest `json:"veleroHooks,omitempty"`
+	SkipPodReadyCheck       *bool                                   `json:"skipPodReadyCheck,omitempty"`
+	Description             string                                  `json:"description,omitempty"`
 }
 
 type UpdateDisasterInstanceRequest struct {
-	DataSyncPolicy     *string                                 `json:"dataSyncPolicy,omitempty"`
-	ResourceSyncPolicy *string                                 `json:"resourceSyncPolicy,omitempty"`
-	Namespaces         []string                                `json:"namespaces,omitempty"`
-	LabelSelector      *metav1.LabelSelector                   `json:"labelSelector,omitempty"`
-	PodRestoreMethod   *string                                 `json:"podRestoreMethod,omitempty"`
-	RestorePolicy      *RestorePolicyRequest                   `json:"restorePolicy,omitempty"`
-	VeleroHooks        *velerohooks.DisasterVeleroHooksRequest `json:"veleroHooks,omitempty"`
-	SkipPodReadyCheck  *bool                                   `json:"skipPodReadyCheck,omitempty"`
-	Description        *string                                 `json:"description,omitempty"`
+	DataSyncPolicy          *string                                 `json:"dataSyncPolicy,omitempty"`
+	ResourceSyncPolicy      *string                                 `json:"resourceSyncPolicy,omitempty"`
+	Namespaces              []string                                `json:"namespaces,omitempty"`
+	LabelSelector           *metav1.LabelSelector                   `json:"labelSelector,omitempty"`
+	OperationTimeoutMinutes *int32                                  `json:"operationTimeoutMinutes,omitempty"`
+	PodRestoreMethod        *string                                 `json:"podRestoreMethod,omitempty"`
+	RestorePolicy           *RestorePolicyRequest                   `json:"restorePolicy,omitempty"`
+	VeleroHooks             *velerohooks.DisasterVeleroHooksRequest `json:"veleroHooks,omitempty"`
+	SkipPodReadyCheck       *bool                                   `json:"skipPodReadyCheck,omitempty"`
+	Description             *string                                 `json:"description,omitempty"`
 
 	veleroHooksPatch velerohooks.DisasterVeleroHooksPatch
 }
@@ -415,16 +418,17 @@ func ConvertToDisasterInstanceDTO(item *dapisv1.DisasterInstance, config *dapisv
 		CreationTimestamp: common.NewLocalTime(item.CreationTimestamp),
 		Description:       item.Annotations["testudo.softcdata.com/description"],
 		Spec: DisasterInstanceSpecDTO{
-			Config:             item.Spec.Config,
-			DataSyncPolicy:     item.Spec.DataSyncPolicy,
-			ResourceSyncPolicy: item.Spec.ResourceSyncPolicy,
-			Namespaces:         item.Spec.Namespaces,
-			LabelSelector:      item.Spec.LabelSelector,
-			PodRestoreMethod:   item.Spec.PodRestoreMethod,
-			RestorePolicy:      convertRestorePolicyDTO(item.Spec.RestorePolicy),
-			VeleroHooks:        item.Spec.VeleroHooks,
-			SkipPodReadyCheck:  item.Spec.SkipPodReadyCheck,
-			Description:        item.Annotations["testudo.softcdata.com/description"],
+			Config:                  item.Spec.Config,
+			DataSyncPolicy:          item.Spec.DataSyncPolicy,
+			ResourceSyncPolicy:      item.Spec.ResourceSyncPolicy,
+			Namespaces:              item.Spec.Namespaces,
+			LabelSelector:           item.Spec.LabelSelector,
+			OperationTimeoutMinutes: item.Spec.OperationTimeoutMinutes,
+			PodRestoreMethod:        item.Spec.PodRestoreMethod,
+			RestorePolicy:           convertRestorePolicyDTO(item.Spec.RestorePolicy),
+			VeleroHooks:             item.Spec.VeleroHooks,
+			SkipPodReadyCheck:       item.Spec.SkipPodReadyCheck,
+			Description:             item.Annotations["testudo.softcdata.com/description"],
 		},
 		Status: DisasterInstanceStatusDTO{
 			FsmState:             item.Status.FsmState,
@@ -593,13 +597,14 @@ func (r *CreateDisasterInstanceRequest) ToCRD() (dapisv1.DisasterInstanceSpec, e
 		return dapisv1.DisasterInstanceSpec{}, err
 	}
 	spec := dapisv1.DisasterInstanceSpec{
-		Config:            r.Config,
-		Namespaces:        r.Namespaces,
-		LabelSelector:     r.LabelSelector,
-		PodRestoreMethod:  r.PodRestoreMethod,
-		RestorePolicy:     restorePolicy,
-		VeleroHooks:       r.VeleroHooks.ToCRD(),
-		SkipPodReadyCheck: r.SkipPodReadyCheck,
+		Config:                  r.Config,
+		Namespaces:              r.Namespaces,
+		LabelSelector:           r.LabelSelector,
+		OperationTimeoutMinutes: r.OperationTimeoutMinutes,
+		PodRestoreMethod:        r.PodRestoreMethod,
+		RestorePolicy:           restorePolicy,
+		VeleroHooks:             r.VeleroHooks.ToCRD(),
+		SkipPodReadyCheck:       r.SkipPodReadyCheck,
 	}
 	r.applyPolicyFields(&spec)
 	return spec, nil

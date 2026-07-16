@@ -28,18 +28,18 @@
 - **Then** Server 必须保留现有 Secret 内容不变
 - **And** 不得将其视为清空凭据
 
+#### Scenario: PATCH 提交空密码时保持现有 Secret 不变
+- **Given** 一个 `Cluster` 已经配置了 Velero 安装凭据
+- **When** 客户端通过 PATCH 提交 `veleroInstall.password=""`
+- **Then** Server 必须保留现有 Secret 内容不变
+- **And** 不得轮换 Secret
+- **And** 不得将其视为清空凭据
+
 #### Scenario: 显式删除凭据时移除对应 Secret 条目
 - **Given** 一个 `Cluster` 已经配置了 Velero 安装凭据
 - **When** 客户端显式提交删除 Velero registry 凭据的请求
 - **Then** Server 必须删除对应的管理平面 Secret
 - **And** 必须清空 `Cluster.spec.veleroInstall.registryCredentialSecretRef`
-
-#### Scenario: 显式传空用户名时清空凭据并保留镜像源
-- **Given** 一个 `Cluster` 已经配置了 Velero 安装镜像源和凭据
-- **When** 客户端通过 PATCH 显式提交 `veleroInstall.username=""`
-- **Then** Server 必须删除对应的管理平面 Secret
-- **And** 必须清空 `Cluster.spec.veleroInstall.registryCredentialSecretRef`
-- **And** 必须保留 `Cluster.spec.veleroInstall.imageRegistry`
 
 #### Scenario: 显式传空镜像源前缀时清空 Velero 安装配置
 - **Given** 一个 `Cluster` 已经配置了 Velero 安装镜像源和凭据
