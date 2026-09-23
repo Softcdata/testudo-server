@@ -22,8 +22,10 @@ import (
 	"github.com/softcdata/testudo-server/internal/common"
 	"github.com/softcdata/testudo-server/internal/i18n"
 	"github.com/softcdata/testudo-server/internal/transport"
+	veleroresource "github.com/softcdata/testudo-server/internal/veleroresource"
 	velerov1 "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -126,9 +128,14 @@ func (h *AppBackupHandler) computeVeleroBackupIncludesUncached(ctx context.Conte
 	if includedResources == nil {
 		includedResources = make([]string, 0)
 	}
+	resourceMapper := restMapperForReader(remote)
 
 	if resourceList, err := h.loadBackupResourceListUncached(ctx, clusterName, remote, backup); err == nil {
 		actualNamespaces, actualResources := buildIncludesFromResourceList(resourceList)
+		actualResources, err = veleroresource.NormalizeResourceFilters("includedResources", actualResources, resourceMapper)
+		if err != nil {
+			return VeleroBackupIncludesDTO{}, false, err
+		}
 		return VeleroBackupIncludesDTO{
 			IncludedNamespaces: actualNamespaces,
 			IncludedResources:  actualResources,
@@ -143,11 +150,27 @@ func (h *AppBackupHandler) computeVeleroBackupIncludesUncached(ctx context.Conte
 			err,
 		)
 	}
+	includedResources, err := veleroresource.NormalizeResourceFilters("includedResources", includedResources, resourceMapper)
+	if err != nil {
+		return VeleroBackupIncludesDTO{}, false, err
+	}
 
 	return VeleroBackupIncludesDTO{
 		IncludedNamespaces: includedNamespaces,
 		IncludedResources:  includedResources,
 	}, false, nil
+}
+
+type restMapperReader interface {
+	RESTMapper() meta.RESTMapper
+}
+
+func restMapperForReader(reader ctrlclient.Reader) meta.RESTMapper {
+	provider, ok := reader.(restMapperReader)
+	if !ok {
+		return nil
+	}
+	return provider.RESTMapper()
 }
 
 func (h *AppBackupHandler) loadBackupResourceListUncached(ctx context.Context, clusterName string, remote ctrlclient.Reader, backup *velerov1.Backup) (map[string][]string, error) {

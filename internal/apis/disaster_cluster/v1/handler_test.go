@@ -246,6 +246,208 @@ func TestCreateCluster_WithImageSources(t *testing.T) {
 	}, created.Spec.ImageSources)
 }
 
+func TestCreateCluster_WithBSLEndpoint(t *testing.T) {
+	h := newMockHandler()
+
+	ctx := app.NewContext(16)
+	req := CreateDisasterClusterRequest{
+		Name:  "cluster-with-bsl-endpoint",
+		Token: "token-1",
+		VeleroInstall: &VeleroInstallWriteDTO{
+			BSLEndpoint: " https://clb.example.com:9000/ ",
+		},
+	}
+	body, _ := json.Marshal(req)
+	ctx.Request.SetBody(body)
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.createCluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusCreated, ctx.Response.StatusCode())
+	created, err := h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), req.Name, metav1.GetOptions{})
+	assert.NoError(t, err)
+	if assert.NotNil(t, created.Spec.VeleroInstall) {
+		assert.Equal(t, "https://clb.example.com:9000/", created.Spec.VeleroInstall.BSLEndpoint)
+		assert.Empty(t, created.Spec.VeleroInstall.ImageRegistry)
+	}
+	assert.Contains(t, string(ctx.Response.Body()), `"bslEndpoint":"https://clb.example.com:9000/"`)
+}
+
+func TestCreateCluster_RejectsInvalidBSLEndpoint(t *testing.T) {
+	h := newMockHandler()
+
+	ctx := app.NewContext(16)
+	req := CreateDisasterClusterRequest{
+		Name: "cluster-invalid-bsl-endpoint",
+		VeleroInstall: &VeleroInstallWriteDTO{
+			BSLEndpoint: "minio.internal:9000",
+		},
+	}
+	body, _ := json.Marshal(req)
+	ctx.Request.SetBody(body)
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.createCluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusBadRequest, ctx.Response.StatusCode())
+	_, err := h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), req.Name, metav1.GetOptions{})
+	assert.True(t, apierrors.IsNotFound(err))
+}
+
+func TestPatchCluster_WithBSLEndpointSetsAndClearsEndpoint(t *testing.T) {
+	clusterName := "cluster-patch-bsl-endpoint"
+	h := newMockHandler(&dapisv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: clusterName},
+		Spec: dapisv1.ClusterSpec{
+			VeleroInstall: &dapisv1.VeleroInstallSpec{
+				ImageRegistry: "harbor.customer.local/disaster",
+			},
+		},
+	})
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{{Key: "name", Value: clusterName}}
+	endpoint := "http://5.48.0.10:9000"
+	req := PatchDisasterClusterRequest{VeleroInstall: &PatchVeleroInstallWriteDTO{BSLEndpoint: &endpoint}}
+	body, _ := json.Marshal(req)
+	ctx.Request.SetBody(body)
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.patchCluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	updated, err := h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), clusterName, metav1.GetOptions{})
+	assert.NoError(t, err)
+	if assert.NotNil(t, updated.Spec.VeleroInstall) {
+		assert.Equal(t, endpoint, updated.Spec.VeleroInstall.BSLEndpoint)
+		assert.Equal(t, "harbor.customer.local/disaster", updated.Spec.VeleroInstall.ImageRegistry)
+	}
+
+	ctx = app.NewContext(16)
+	ctx.Params = param.Params{{Key: "name", Value: clusterName}}
+	emptyEndpoint := ""
+	req = PatchDisasterClusterRequest{VeleroInstall: &PatchVeleroInstallWriteDTO{BSLEndpoint: &emptyEndpoint}}
+	body, _ = json.Marshal(req)
+	ctx.Request.SetBody(body)
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.patchCluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	updated, err = h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), clusterName, metav1.GetOptions{})
+	assert.NoError(t, err)
+	if assert.NotNil(t, updated.Spec.VeleroInstall) {
+		assert.Empty(t, updated.Spec.VeleroInstall.BSLEndpoint)
+		assert.Equal(t, "harbor.customer.local/disaster", updated.Spec.VeleroInstall.ImageRegistry)
+	}
+}
+
+func TestClusterDTO_ReadsBSLEndpointForDetailAndList(t *testing.T) {
+	clusterName := "cluster-read-bsl-endpoint"
+	h := newMockHandler(&dapisv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: clusterName},
+		Spec: dapisv1.ClusterSpec{
+			VeleroInstall: &dapisv1.VeleroInstallSpec{BSLEndpoint: "http://clb.example.com:9000"},
+		},
+	})
+
+	detailCtx := app.NewContext(16)
+	detailCtx.Params = param.Params{{Key: "name", Value: clusterName}}
+	detailCtx.Request.SetRequestURI("/clusters/" + clusterName)
+	h.cluster(context.Background(), detailCtx)
+	assert.Equal(t, consts.StatusOK, detailCtx.Response.StatusCode())
+	assert.Contains(t, string(detailCtx.Response.Body()), `"bslEndpoint":"http://clb.example.com:9000"`)
+
+	listCtx := app.NewContext(16)
+	listCtx.Request.SetRequestURI("/clusters")
+	h.clusters(context.Background(), listCtx)
+	assert.Equal(t, consts.StatusOK, listCtx.Response.StatusCode())
+	assert.Contains(t, string(listCtx.Response.Body()), `"bslEndpoint":"http://clb.example.com:9000"`)
+}
+
+func TestPatchCluster_WithoutBSLEndpointKeepsExistingEndpoint(t *testing.T) {
+	clusterName := "cluster-keep-bsl-endpoint"
+	h := newMockHandler(&dapisv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: clusterName},
+		Spec: dapisv1.ClusterSpec{
+			VeleroInstall: &dapisv1.VeleroInstallSpec{BSLEndpoint: "http://clb.example.com:9000"},
+		},
+	})
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{{Key: "name", Value: clusterName}}
+	newToken := "token-2"
+	req := PatchDisasterClusterRequest{Token: &newToken}
+	body, _ := json.Marshal(req)
+	ctx.Request.SetBody(body)
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.patchCluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	updated, err := h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), clusterName, metav1.GetOptions{})
+	assert.NoError(t, err)
+	if assert.NotNil(t, updated.Spec.VeleroInstall) {
+		assert.Equal(t, "http://clb.example.com:9000", updated.Spec.VeleroInstall.BSLEndpoint)
+	}
+}
+
+func TestPatchCluster_RejectsInvalidBSLEndpointWithoutUpdate(t *testing.T) {
+	clusterName := "cluster-invalid-patch-bsl-endpoint"
+	h := newMockHandler(&dapisv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: clusterName},
+		Spec: dapisv1.ClusterSpec{
+			VeleroInstall: &dapisv1.VeleroInstallSpec{BSLEndpoint: "http://valid.example.com:9000"},
+		},
+	})
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{{Key: "name", Value: clusterName}}
+	endpoint := "https://user:pass@example.com:9000?bad=1"
+	req := PatchDisasterClusterRequest{VeleroInstall: &PatchVeleroInstallWriteDTO{BSLEndpoint: &endpoint}}
+	body, _ := json.Marshal(req)
+	ctx.Request.SetBody(body)
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.patchCluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusBadRequest, ctx.Response.StatusCode())
+	updated, err := h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), clusterName, metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Equal(t, "http://valid.example.com:9000", updated.Spec.VeleroInstall.BSLEndpoint)
+}
+
+func TestPatchCluster_ClearingImageRegistryKeepsBSLEndpoint(t *testing.T) {
+	clusterName := "cluster-clear-image-keeps-bsl-endpoint"
+	h := newMockHandler(&dapisv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: clusterName},
+		Spec: dapisv1.ClusterSpec{
+			VeleroInstall: &dapisv1.VeleroInstallSpec{
+				ImageRegistry: "harbor.customer.local/disaster",
+				BSLEndpoint:   "http://5.48.0.10:9000",
+			},
+		},
+	})
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{{Key: "name", Value: clusterName}}
+	emptyRegistry := ""
+	req := PatchDisasterClusterRequest{VeleroInstall: &PatchVeleroInstallWriteDTO{ImageRegistry: &emptyRegistry}}
+	body, _ := json.Marshal(req)
+	ctx.Request.SetBody(body)
+	ctx.Request.Header.SetContentTypeBytes([]byte("application/json"))
+
+	h.patchCluster(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	updated, err := h.DisasterClient.DisasterV1().Clusters().Get(context.Background(), clusterName, metav1.GetOptions{})
+	assert.NoError(t, err)
+	if assert.NotNil(t, updated.Spec.VeleroInstall) {
+		assert.Empty(t, updated.Spec.VeleroInstall.ImageRegistry)
+		assert.Equal(t, "http://5.48.0.10:9000", updated.Spec.VeleroInstall.BSLEndpoint)
+	}
+}
+
 func TestCreateCluster_WithVeleroInstallCredentialsCreatesManagedSecret(t *testing.T) {
 	h := newMockHandler()
 

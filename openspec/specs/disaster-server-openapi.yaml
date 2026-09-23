@@ -258,6 +258,108 @@ components:
             additionalProperties: true
             description: 待逐接口按 server DTO 与 operator 调用链补齐具体字段
             type: object
+        ClusterVeleroInstallRead:
+            description: Cluster 中 Velero 安装与物理集群专用 BSL endpoint 的非敏感配置。密码和 dockerconfigjson 原文永不返回。
+            properties:
+                imageRegistry:
+                    description: Velero 安装镜像仓库前缀；未配置时省略。
+                    type: string
+                bslEndpoint:
+                    description: 当前物理集群访问共享 S3/MinIO 的专用 BSL endpoint；未配置时省略。必须是带 host 的绝对 http/https URL。
+                    type: string
+                    format: uri
+                username:
+                    description: 从 server 管理的 registry Secret 解析出的用户名；无法解析或未配置凭据时省略。
+                    type: string
+                credentialConfigured:
+                    description: 是否存在 server 管理的 registry credential Secret。
+                    type: boolean
+            required:
+                - credentialConfigured
+            type: object
+        ClusterVeleroInstallWrite:
+            description: 创建 Cluster 时的 Velero 安装配置。bslEndpoint 绑定物理集群，不随主备角色推断。
+            properties:
+                imageRegistry:
+                    description: Velero 安装镜像仓库前缀；携带 username/password 时必填。
+                    type: string
+                bslEndpoint:
+                    description: 可选的物理集群专用 BSL endpoint；空值表示使用 Operator 默认 endpoint。
+                    type: string
+                    format: uri
+                username:
+                    description: 私有镜像仓库用户名；必须与 password 同时提供。
+                    type: string
+                password:
+                    description: 私有镜像仓库密码；仅写入管理面 Secret，不会在响应中返回。
+                    type: string
+                    format: password
+                removeCredential:
+                    description: 显式删除已有 registry credential；创建时通常无需设置。
+                    type: boolean
+            type: object
+        ClusterVeleroInstallPatch:
+            description: Cluster Velero 安装配置的局部更新对象。指针字段未传表示保持原值，bslEndpoint 传空字符串表示清除。
+            properties:
+                imageRegistry:
+                    description: 非空值修改镜像仓库前缀；空字符串清除镜像仓库和 server 管理的凭据，但保留 bslEndpoint。
+                    type: string
+                bslEndpoint:
+                    description: 非空值设置物理集群专用 endpoint；空字符串清除专用 endpoint；未传保持原值。
+                    type: string
+                    format: uri
+                username:
+                    description: 轮换凭据时的新用户名；须与非空 password 一起提供。
+                    type: string
+                password:
+                    description: 非空值轮换凭据；未传或空字符串保持既有凭据。
+                    type: string
+                    format: password
+                removeCredential:
+                    description: 为 true 时删除 server 管理的 registry credential，但保留 imageRegistry 和 bslEndpoint。
+                    type: boolean
+            type: object
+        ClusterCreateRequest:
+            description: 创建容灾平台管理的目标 Cluster 请求。
+            properties:
+                name:
+                    type: string
+                description:
+                    type: string
+                token:
+                    type: string
+                endpoint:
+                    type: string
+                kubeConfig:
+                    type: string
+                    format: byte
+                tag:
+                    type: string
+                imageSources:
+                    type: array
+                    items:
+                        type: object
+                veleroInstall:
+                    $ref: '#/components/schemas/ClusterVeleroInstallWrite'
+            required:
+                - name
+            type: object
+        ClusterPatchRequest:
+            description: Cluster 局部更新请求。未传字段保持原值。
+            properties:
+                token:
+                    type: string
+                tag:
+                    type: string
+                description:
+                    type: string
+                imageSources:
+                    type: array
+                    items:
+                        type: object
+                veleroInstall:
+                    $ref: '#/components/schemas/ClusterVeleroInstallPatch'
+            type: object
         BusinessDefaultConfigField:
             description: 业务默认配置字段条目。该结构由 server 内置字段目录和 ConfigMap 中的当前值合成，前端可以直接展示字段含义、当前值、默认值、可编辑性、生效方式和校验边界。
             type: object
@@ -843,8 +945,32 @@ components:
                   properties:
                     data:
                         $ref: '#/components/schemas/BackupDownloadResponse'
+        VeleroBackupIncludesDTO:
+            description: Velero Backup 实际包含范围。资源类型由 BackupResourceList 的 GVK 转换为 Velero group-resource 后返回；资源清单不可用时来自 Backup.spec。
+            type: object
+            required:
+                - includedNamespaces
+                - includedResources
+            properties:
+                includedNamespaces:
+                    description: 备份包含的命名空间名称。资源清单路径反推后去重并升序排序；集群级资源不会贡献命名空间。
+                    type: array
+                    items:
+                        type: string
+                includedResources:
+                    description: 备份包含的资源类型。必须使用 group-resource 格式，例如 deployments.apps、configmaps、pods；不会返回未转换的 apps/v1/Deployment。
+                    type: array
+                    items:
+                        type: string
+        VeleroBackupIncludesEnvelope:
+            allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - type: object
+                  properties:
+                    data:
+                        $ref: '#/components/schemas/VeleroBackupIncludesDTO'
         AppRestoreSpecDTO:
-            description: AppRestore 对外 spec DTO。spec.hooks 回显 CRD template.hooks。
+            description: AppRestore 对外 spec DTO。spec.hooks 回显 CRD template.hooks；includedResources 与 excludedResources 始终以 Velero group-resource 格式返回。
             type: object
             additionalProperties: true
             properties:
@@ -853,6 +979,20 @@ components:
                 cluster:
                     type: string
                 backupName:
+                    type: string
+                includedResources:
+                    description: Velero Restore 包含的资源类型。返回值使用 group-resource 格式，例如 deployments.apps、configmaps、pods。
+                    type: array
+                    items:
+                        type: string
+                excludedResources:
+                    description: Velero Restore 排除的资源类型。返回值使用 group-resource 格式，例如 deployments.apps、configmaps、pods。
+                    type: array
+                    items:
+                        type: string
+                existingResourcePolicy:
+                    description: 已存在资源处理策略。none 表示不覆盖，update 表示更新现有资源。
+                    enum: [none, update]
                     type: string
                 restorePVs:
                     description: 是否恢复 PV 数据；为 true 时 server 会自动注入 PVC spec.volumeName 清理规则，使用 add /spec/volumeName 空值 patch 以避免字段不存在时失败。
@@ -912,7 +1052,7 @@ components:
                     data:
                         $ref: '#/components/schemas/AppRestoreDTO'
         AppRestoreCreateRequest:
-            description: 创建 AppRestore 请求体。hooks 原样写入 AppRestore.spec.template.hooks，并由 operator 继续透传给 Velero Restore。
+            description: 创建 AppRestore 请求体。hooks 原样写入 AppRestore.spec.template.hooks，并由 operator 继续透传给 Velero Restore。includedResources 与 excludedResources 接受 Velero group-resource 格式以及历史 GVK 格式；Server 使用源集群 RESTMapper 归一化后写入 CR。
             type: object
             additionalProperties: true
             properties:
@@ -924,15 +1064,43 @@ components:
                     type: string
                 backupName:
                     type: string
+                includedResources:
+                    description: 包含资源类型。推荐使用 deployments.apps、configmaps、pods；兼容 apps/v1/Deployment、v1/ConfigMap 等 GVK，Server 会在写入 CR 前转换。
+                    type: array
+                    items:
+                        type: string
+                excludedResources:
+                    description: 排除资源类型。推荐使用 deployments.apps、configmaps、pods；兼容 apps/v1/Deployment、v1/ConfigMap 等 GVK，Server 会在写入 CR 前转换。
+                    type: array
+                    items:
+                        type: string
+                existingResourcePolicy:
+                    description: 已存在资源处理策略。允许 none、update 以及空值；update 用于覆盖已有资源。
+                    enum: [none, update]
+                    type: string
                 hooks:
                     $ref: '#/components/schemas/VeleroRestoreHooks'
             required: [name, backupSource, cluster]
         AppRestoreUpdateRequest:
-            description: 更新 AppRestore 请求体。hooks 未出现表示保持原值；传对象表示整体替换；传 null 或空对象表示清空 template.hooks。
+            description: 更新 AppRestore 请求体。hooks 未出现表示保持原值；传对象表示整体替换；传 null 或空对象表示清空 template.hooks。includedResources 与 excludedResources 接受 Velero group-resource 格式以及历史 GVK 格式；Server 优先使用现有 AppRestore sourceCluster 的 RESTMapper 归一化。历史对象的 sourceCluster 为空时，或本次请求更改 backupSource 时，Server 读取最终 backupSource 对应 AppBackup 并使用其 spec.cluster；源集群仍无法确定时返回 400，不使用恢复目标集群映射。
             type: object
             additionalProperties: true
             properties:
                 name:
+                    type: string
+                includedResources:
+                    description: 包含资源类型。推荐使用 deployments.apps、configmaps、pods；兼容 apps/v1/Deployment、v1/ConfigMap 等 GVK，Server 会在更新 CR 前转换。
+                    type: array
+                    items:
+                        type: string
+                excludedResources:
+                    description: 排除资源类型。推荐使用 deployments.apps、configmaps、pods；兼容 apps/v1/Deployment、v1/ConfigMap 等 GVK，Server 会在更新 CR 前转换。
+                    type: array
+                    items:
+                        type: string
+                existingResourcePolicy:
+                    description: 已存在资源处理策略。允许 none、update 以及空值；update 用于更新已有资源。
+                    enum: [none, update]
                     type: string
                 restorePVs:
                     description: 字段存在且为 true 时覆盖 spec.template.restorePVs，并标准化 PVC spec.volumeName 清理规则；legacy remove /spec/volumeName 会被替换为 add /spec/volumeName 空值 patch。
@@ -7546,7 +7714,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.getVeleroBackupIncludes`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `c.getVeleroBackupIncludes`，用于读取指定 Velero Backup 的实际资源清单并返回恢复选择器使用的命名空间以及资源类型。
 
                 ## 2. 控制哪些资源
 
@@ -7554,22 +7722,22 @@ paths:
                 - AppBackup、Velero Backup/Schedule
 
                 下层影响资源：
-                - 待逐接口查询 operator controller 后补齐。
+                - 读取目标集群的 Velero Backup、BackupStorageLocation、DownloadRequest，以及对象存储中的 BackupResourceList。
 
                 资源作用范围：
-                - 待逐接口查询 server 与 operator 调用链后补齐。
+                - 只读查询，不创建、更新、删除 AppBackup、Velero Backup 或业务资源。
 
                 ## 3. 入参的详细说明
 
-                请求字段 schema 已先生成骨架，字段中文含义、可传入值、传入目的、是否必传、约束与默认值需要在逐接口阶段补齐。
+                请求不使用 body。`backupName` 为必填 path 参数，表示目标集群 `velero` 命名空间中的 Velero Backup 名称。`cluster` 为必填 query 参数，表示备份所在 Cluster 名称；当 `cluster` 为空时兼容读取 `clusterName`。两个集群参数均为空时返回 400。
 
                 ## 4. 返回的详细说明
 
-                返回字段 schema 已先生成统一信封骨架，具体 data 字段、字段来源、可能取值、为空条件需要在逐接口阶段补齐。
+                成功返回 200 统一信封。`data.includedNamespaces` 是从 BackupResourceList 资源实例路径提取、去重并排序的命名空间；资源清单不可用时回退到 Backup.spec.includedNamespaces。`data.includedResources` 是资源清单 map key 归一化后的 group-resource 值，例如 `apps/v1/Deployment` 转为 `deployments.apps`、`v1/ConfigMap` 转为 `configmaps`；已经是 group-resource 的值保持不变。资源清单不可用时回退到 Backup.spec.includedResources。响应不会返回未转换的 GVK。
 
                 ## 5. 可能返回的错误
 
-                server 当场返回错误已先列出通用响应码，具体触发条件需要在逐接口阶段补齐。 接口成功后，operator 后续执行失败需要通过详情、列表以及事件流接口读取状态回写。
+                `backupName` 或 `cluster` 缺失返回 400；目标集群客户端获取失败返回 400；Backup 不存在返回 404；读取 Backup 发生非 NotFound 错误返回 500；资源清单成功解析但源集群 RESTMapper 无法解析 GVK 时返回 500，响应不会静默透传该 GVK。资源清单下载、解压或 JSON 解析失败仍按既有规则回退到 Backup.spec。
             operationId: get_apis_appbackups_testudo_softcdata_com_v1_velero_backups_backupname_includes
             parameters:
                 - description: 路径参数 `backupName`，中文含义待逐接口调用链确认。
@@ -7577,7 +7745,19 @@ paths:
                   name: backupName
                   required: true
                   schema:
-                    type: string
+                      type: string
+                - description: 备份所在 Cluster 名称；用于获取远端 Velero client。
+                  in: query
+                  name: cluster
+                  required: true
+                  schema:
+                      type: string
+                - description: "`cluster` 的历史兼容别名；仅当 `cluster` 为空时生效。"
+                  in: query
+                  name: clusterName
+                  required: false
+                  schema:
+                      type: string
             requestBody:
                 content:
                     application/json:
@@ -7590,7 +7770,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Envelope'
+                                $ref: '#/components/schemas/VeleroBackupIncludesEnvelope'
                     description: 处理成功
                 "400":
                     content:
@@ -7965,7 +8145,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.createAppRestore`。创建 AppRestore 时可传 `hooks`，server 校验后原样写入 `AppRestore.spec.template.hooks`，operator 后续透传到 Velero Restore。请求中 `restorePVs=true` 或 `cleanVolumes=true` 时，server 会自动注入 PVC `spec.volumeName` 清理 ResourceModifierRule；该规则必须使用幂等 `add /spec/volumeName` 空值 patch，不得使用字段不存在时会失败的 `remove /spec/volumeName`。
+                该接口对应 server handler `c.createAppRestore`。创建 AppRestore 时可传 `hooks`，server 校验后原样写入 `AppRestore.spec.template.hooks`，operator 后续透传到 Velero Restore。请求中 `restorePVs=true` 或 `cleanVolumes=true` 时，server 会自动注入 PVC `spec.volumeName` 清理 ResourceModifierRule；该规则必须使用幂等 `add /spec/volumeName` 空值 patch，不得使用字段不存在时会失败的 `remove /spec/volumeName`。`includedResources` 与 `excludedResources` 在写入 CR 前会由源集群 RESTMapper 归一化为 Velero group-resource。
 
                 ## 2. 控制哪些资源
 
@@ -7980,15 +8160,15 @@ paths:
 
                 ## 3. 入参的详细说明
 
-                请求字段 schema 已先生成骨架，字段中文含义、可传入值、传入目的、是否必传、约束与默认值需要在逐接口阶段补齐。
+                Body 必须包含 `name`、`backupSource`、`cluster`。`backupName` 不传时取源 AppBackup.status.history[0].name。`includedResources` 与 `excludedResources` 是资源筛选数组，推荐传 `deployments.apps`、`configmaps`、`pods`；兼容 `apps/v1/Deployment`、`v1/ConfigMap` 等 GVK，Server 会在读取源 AppBackup 的 source cluster 后通过 RESTMapper 转换。已经是 group-resource 的值以及 `*` 保持不变。`existingResourcePolicy` 允许空值、`none`、`update`；`update` 让 Velero 更新已有资源。无法解析的 GVK 返回 400，字段名以及原始值会出现在错误信息中。
 
                 ## 4. 返回的详细说明
 
-                返回字段 schema 已先生成统一信封骨架，具体 data 字段、字段来源、可能取值、为空条件需要在逐接口阶段补齐。
+                成功返回 201 统一信封，`data` 为新建 AppRestore DTO。`data.spec.includedResources` 与 `data.spec.excludedResources` 返回已归一化的 group-resource 值；创建请求中的 GVK 不会原样出现在响应中。`data.spec.existingResourcePolicy` 返回 `none`、`update` 或空值。201 只表示管理集群 AppRestore CR 创建完成，Velero Restore 由 operator 异步创建以及执行。
 
                 ## 5. 可能返回的错误
 
-                server 当场返回错误已先列出通用响应码，具体触发条件需要在逐接口阶段补齐。 接口成功后，operator 后续执行失败需要通过详情、列表以及事件流接口读取状态回写。
+                JSON 绑定错误、必填字段缺失、源 AppBackup 缺少 cluster/storageLocation、源集群 RESTMapper 无法解析 includedResources/excludedResources 中的 GVK、目标集群未 Ready、恢复前置校验不通过以及 existingResourcePolicy 非法返回 400；源 AppBackup 不存在返回 404；同名 AppRestore 返回 409；其他管理集群写入错误返回 500。Velero Restore 创建失败、资源修改 ConfigMap 创建失败以及恢复执行失败属于 operator 异步状态，不作为本次 201 请求的同步错误。
             operationId: post_apis_apprestores_testudo_softcdata_com_v1_apprestores
             parameters: []
             requestBody:
@@ -7996,7 +8176,7 @@ paths:
                     application/json:
                         schema:
                             $ref: '#/components/schemas/AppRestoreCreateRequest'
-                description: 创建 AppRestore 请求体；`hooks` 会写入 `spec.template.hooks` 并透传给 Velero Restore；`restorePVs=true` 或 `cleanVolumes=true` 会注入幂等 PVC volumeName 清理规则。
+                description: 创建 AppRestore 请求体；`includedResources` 与 `excludedResources` 支持 group-resource 以及兼容 GVK，Server 会使用源集群 RESTMapper 转换；`existingResourcePolicy=update` 允许更新已有资源；`hooks` 会写入 `spec.template.hooks` 并透传给 Velero Restore；`restorePVs=true` 或 `cleanVolumes=true` 会注入幂等 PVC volumeName 清理规则。
                 required: true
             responses:
                 "201":
@@ -8296,7 +8476,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `c.updateAppRestore`。更新 AppRestore 时 `hooks` 未出现保持原值，传对象整体替换，传 null 或空对象清空 template.hooks。请求中 `restorePVs=true` 或 `cleanVolumes=true` 时，server 会标准化现有 PVC `spec.volumeName` 清理 ResourceModifierRule：替换 legacy `remove /spec/volumeName`，并保留一个幂等 `add /spec/volumeName` 空值 patch。
+                该接口对应 server handler `c.updateAppRestore`。更新 AppRestore 时 `hooks` 未出现保持原值，传对象整体替换，传 null 或空对象清空 template.hooks。请求中 `restorePVs=true` 或 `cleanVolumes=true` 时，server 会标准化现有 PVC `spec.volumeName` 清理 ResourceModifierRule：替换 legacy `remove /spec/volumeName`，并保留一个幂等 `add /spec/volumeName` 空值 patch。`includedResources` 与 `excludedResources` 在写入 CR 前会使用源集群 RESTMapper 归一化为 Velero group-resource；历史 AppRestore 的 `sourceCluster` 为空或本次更改 `backupSource` 时，从最终关联 AppBackup 的 `spec.cluster` 获取源集群，无法确定源集群时返回 400，不退回目标集群。
 
                 ## 2. 控制哪些资源
 
@@ -8311,15 +8491,15 @@ paths:
 
                 ## 3. 入参的详细说明
 
-                请求字段 schema 已先生成骨架，字段中文含义、可传入值、传入目的、是否必传、约束与默认值需要在逐接口阶段补齐。
+                Body 字段均为局部更新；path `name` 是对象定位主键，body `name` 缺省时使用 path 值。`includedResources` 与 `excludedResources` 传非空数组时更新恢复筛选范围，支持 `deployments.apps`、`configmaps`、`pods` 等 group-resource，也兼容 `apps/v1/Deployment`、`v1/ConfigMap` 等 GVK。Server 优先使用现有 AppRestore 的 `sourceCluster` RESTMapper；历史对象缺少该字段或请求同时更改 `backupSource` 时，使用最终 `backupSource` 关联 AppBackup 的 `spec.cluster`。源集群无法确定或 GVK 无法解析时返回 400，且 CR 不会更新；不会使用恢复目标集群做映射。`existingResourcePolicy` 允许空值、`none`、`update`。
 
                 ## 4. 返回的详细说明
 
-                返回字段 schema 已先生成统一信封骨架，具体 data 字段、字段来源、可能取值、为空条件需要在逐接口阶段补齐。
+                成功返回 200 统一信封，`data` 为更新后的 AppRestore DTO。`data.spec.includedResources` 与 `data.spec.excludedResources` 返回 group-resource 值；`data.spec.existingResourcePolicy` 返回当前 `none`、`update` 或空值。更新接口只写管理集群 AppRestore CR，不等待 Velero Restore 执行完成。
 
                 ## 5. 可能返回的错误
 
-                server 当场返回错误已先列出通用响应码，具体触发条件需要在逐接口阶段补齐。 接口成功后，operator 后续执行失败需要通过详情、列表以及事件流接口读取状态回写。
+                JSON 绑定错误、path/body 名称冲突、映射字段冲突、源集群无法确定、sourceCluster RESTMapper 无法解析 includedResources/excludedResources 中的 GVK 以及 existingResourcePolicy 非法返回 400；AppRestore 不存在返回 404；资源版本重试后仍冲突返回 409；其他 Get/Update 错误返回 500。更新后 operator 对已创建 Velero Restore 的异步处理结果通过详情、列表以及事件流状态回写。
             operationId: put_apis_apprestores_testudo_softcdata_com_v1_apprestores_name
             parameters:
                 - description: 路径参数 `name`，中文含义待逐接口调用链确认。
@@ -8333,7 +8513,7 @@ paths:
                     application/json:
                         schema:
                             $ref: '#/components/schemas/AppRestoreUpdateRequest'
-                description: 更新 AppRestore 请求体；`hooks` 未出现保持原值，传对象整体替换，传 null 或空对象清空；`restorePVs=true` 或 `cleanVolumes=true` 会标准化 PVC volumeName 清理规则并替换 legacy remove。
+                description: 更新 AppRestore 请求体；`includedResources` 与 `excludedResources` 支持 group-resource 以及兼容 GVK，Server 会使用现有 sourceCluster RESTMapper 转换，历史对象缺少 sourceCluster 或请求更改 backupSource 时回查最终 AppBackup.spec.cluster；源集群无法确定时返回 400；`hooks` 未出现保持原值，传对象整体替换，传 null 或空对象清空；`restorePVs=true` 或 `cleanVolumes=true` 会标准化 PVC volumeName 清理规则并替换 legacy remove。
                 required: true
             responses:
                 "200":
@@ -9817,7 +9997,7 @@ paths:
 
                 ## 4. 返回的详细说明
 
-                返回统一 Envelope。`data` 为分页后的 `DisasterClusterDTO` 列表，`meta` 包含分页与链接信息。每个集群的 `spec.has_token` 与 `spec.has_kube_config` 只表示凭据是否存在，不回显 token 或 kubeconfig 原文。`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口永不返回 `password` 与 dockerconfigjson 原文。
+                返回统一 Envelope。`data` 为分页后的 `DisasterClusterDTO` 列表，`meta` 包含分页与链接信息。每个集群的 `spec.has_token` 与 `spec.has_kube_config` 只表示凭据是否存在，不回显 token 或 kubeconfig 原文。`spec.veleroInstall` 存在时返回 `imageRegistry`、`bslEndpoint`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口永不返回 `password` 与 dockerconfigjson 原文。
 
                 ## 5. 可能返回的错误
 
@@ -9921,11 +10101,11 @@ paths:
 
                 ## 3. 入参的详细说明
 
-                请求体为 JSON。`name` 必传，作为 Cluster CR 名称，长度 1-50 并必须满足 Kubernetes metadata.name 规则。`description` 非必传，写入 `testudo.softcdata.com/description` annotation。`tag` 非必传，写入 `testudo.softcdata.com/cluster-tag` label。`kubeConfig`、`token`、`endpoint` 至少需要满足一种目标集群连接方式：kubeconfig 方式传 `kubeConfig`，token 方式传 `token` 与 `endpoint`。`imageSources` 非必传，用于保存可供后续实例级镜像改写引用的 registry 别名列表。`veleroInstall` 非必传，用于指定 Velero 安装镜像仓库和可选拉取凭据；`username/password` 必须成对出现，携带凭据时必须提供 `imageRegistry`。`username` 会写入管理平面 dockerconfigjson Secret 并可在响应 DTO 中回显，`password` 只用于生成 Secret，不会出现在响应中。
+                请求体为 JSON。`name` 必传，作为 Cluster CR 名称，长度 1-50 并必须满足 Kubernetes metadata.name 规则。`description` 非必传，写入 `testudo.softcdata.com/description` annotation。`tag` 非必传，写入 `testudo.softcdata.com/cluster-tag` label。`kubeConfig`、`token`、`endpoint` 至少需要满足一种目标集群连接方式：kubeconfig 方式传 `kubeConfig`，token 方式传 `token` 与 `endpoint`。`imageSources` 非必传，用于保存可供后续实例级镜像改写引用的 registry 别名列表。`veleroInstall` 非必传，其中 `bslEndpoint` 用于声明当前物理集群的专用 BSL S3/MinIO endpoint，必须是带 host 的绝对 `http` 或 `https` URL，禁止 userinfo、query 和 fragment；未配置时由 Operator 使用默认 endpoint。该对象还可指定 Velero 安装镜像仓库和可选拉取凭据；`username/password` 必须成对出现，携带凭据时必须提供 `imageRegistry`。`username` 会写入管理平面 dockerconfigjson Secret 并可在响应 DTO 中回显，`password` 只用于生成 Secret，不会出现在响应中。
 
                 ## 4. 返回的详细说明
 
-                成功时 HTTP 状态码为 `201`，返回统一 Envelope。`data` 为创建后的 `DisasterClusterDTO`，包含 `id`、`name`、`description`、`labels`、`creation_timestamp`、脱敏后的 `spec` 和当前 `status`。`spec.has_token` 与 `spec.has_kube_config` 只表示凭据是否存在，不回显 token 或 kubeconfig 原文。`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；响应不返回 `password` 与 dockerconfigjson 原文。创建响应是 CR 刚写入后的即时结果，operator 尚未 reconcile 时 status 字段可能为空，后续状态需要通过详情、列表或 watch 接口读取。
+                成功时 HTTP 状态码为 `201`，返回统一 Envelope。`data` 为创建后的 `DisasterClusterDTO`，包含 `id`、`name`、`description`、`labels`、`creation_timestamp`、脱敏后的 `spec` 和当前 `status`。`spec.has_token` 与 `spec.has_kube_config` 只表示凭据是否存在，不回显 token 或 kubeconfig 原文。`spec.veleroInstall` 存在时返回 `imageRegistry`、`bslEndpoint`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；响应不返回 `password` 与 dockerconfigjson 原文。创建响应是 CR 刚写入后的即时结果，operator 尚未 reconcile 时 status 字段可能为空，后续状态需要通过详情、列表或 watch 接口读取。
 
                 ## 5. 可能返回的错误
 
@@ -9941,8 +10121,8 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/GenericObject'
-                description: 请求体字段待逐接口按 server request struct 与 operator 调用链补齐。
+                            $ref: '#/components/schemas/ClusterCreateRequest'
+                description: 创建 Cluster 请求。`veleroInstall.bslEndpoint` 为可选的物理集群专用 BSL endpoint。
                 required: false
             responses:
                 "200":
@@ -10149,7 +10329,7 @@ paths:
 
                 ## 4. 返回的详细说明
 
-                返回统一 Envelope。`data` 为指定 Cluster 的 `DisasterClusterDTO`，包含 `id`、`name`、`description`、`labels`、`creation_timestamp`、脱敏后的 `spec` 和当前 `status`。`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口永不返回 `password` 与 dockerconfigjson 原文。
+                返回统一 Envelope。`data` 为指定 Cluster 的 `DisasterClusterDTO`，包含 `id`、`name`、`description`、`labels`、`creation_timestamp`、脱敏后的 `spec` 和当前 `status`。`spec.veleroInstall` 存在时返回 `imageRegistry`、`bslEndpoint`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口永不返回 `password` 与 dockerconfigjson 原文。
 
                 ## 5. 可能返回的错误
 
@@ -10257,11 +10437,11 @@ paths:
 
                 ## 3. 入参的详细说明
 
-                请求体为 JSON，所有字段均为局部更新。支持 `token`、`tag`、`description`、`imageSources`、`veleroInstall`。未携带字段表示保持原值。`veleroInstall.imageRegistry` 传非空值时修改 Velero 安装镜像仓库前缀，传空字符串时删除 server 管理的 registry Secret 并清空整段 `Cluster.spec.veleroInstall`。`veleroInstall.password` 传非空值时表示轮换管理平面 dockerconfigjson Secret，此时 `veleroInstall.username` 也必须非空，且有效镜像源前缀不能为空；`veleroInstall.password` 未携带或传空字符串时表示不修改既有凭据，可与编辑态回显的 `username` 一起提交，不会创建、更新或删除 Secret。`veleroInstall.removeCredential=true` 表示显式删除凭据，server 删除管理平面 registry Secret 并清空 `Cluster.spec.veleroInstall.registryCredentialSecretRef`，但保留非空 `imageRegistry`。未携带 username/password 不代表删除凭据，空 username/password 也不代表删除凭据。
+                请求体为 JSON，所有字段均为局部更新。支持 `token`、`tag`、`description`、`imageSources`、`veleroInstall`。未携带字段表示保持原值。`veleroInstall.bslEndpoint` 传非空值时设置当前物理集群专用 BSL endpoint，传空字符串时清除该覆盖值；值必须是带 host 的绝对 `http` 或 `https` URL，禁止 userinfo、query 和 fragment。`veleroInstall.imageRegistry` 传非空值时修改 Velero 安装镜像仓库前缀，传空字符串时删除 server 管理的 registry Secret 并清空镜像仓库和凭据引用，但保留已有 `bslEndpoint`。当所有 VeleroInstall 字段都为空时，server 清除整段配置。`veleroInstall.password` 传非空值时表示轮换管理平面 dockerconfigjson Secret，此时 `veleroInstall.username` 也必须非空，且有效镜像源前缀不能为空；`veleroInstall.password` 未携带或传空字符串时表示不修改既有凭据，可与编辑态回显的 `username` 一起提交，不会创建、更新或删除 Secret。`veleroInstall.removeCredential=true` 表示显式删除凭据，server 删除管理平面 registry Secret 并清空 `Cluster.spec.veleroInstall.registryCredentialSecretRef`，但保留非空 `imageRegistry` 和 `bslEndpoint`。未携带 username/password 不代表删除凭据，空 username/password 也不代表删除凭据。
 
                 ## 4. 返回的详细说明
 
-                返回统一 Envelope。`data` 为更新后的 `DisasterClusterDTO`。`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口永不返回 `password` 与 dockerconfigjson 原文。若请求体没有任何支持字段，接口返回当前 DTO，不执行 Kubernetes Update。
+                返回统一 Envelope。`data` 为更新后的 `DisasterClusterDTO`。`spec.veleroInstall` 存在时返回 `imageRegistry`、`bslEndpoint`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口永不返回 `password` 与 dockerconfigjson 原文。若请求体没有任何支持字段，接口返回当前 DTO，不执行 Kubernetes Update。
 
                 ## 5. 可能返回的错误
 
@@ -10278,8 +10458,8 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/GenericObject'
-                description: 请求体字段待逐接口按 server request struct 与 operator 调用链补齐。
+                            $ref: '#/components/schemas/ClusterPatchRequest'
+                description: Cluster 局部更新请求；`veleroInstall.bslEndpoint` 未传保持原值，传空字符串清除。
                 required: false
             responses:
                 "200":
@@ -10374,7 +10554,7 @@ paths:
 
                 ## 4. 返回的详细说明
 
-                成功时返回 HTTP `202` 统一 Envelope。`data.cluster` 为写入刷新 annotation 后的 `DisasterClusterDTO`，其 `spec.veleroInstall` 与详情接口保持一致：存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口不返回 `password` 与 dockerconfigjson 原文。
+                成功时返回 HTTP `202` 统一 Envelope。`data.cluster` 为写入刷新 annotation 后的 `DisasterClusterDTO`，其 `spec.veleroInstall` 与详情接口保持一致：存在时返回 `imageRegistry`、`bslEndpoint`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；接口不返回 `password` 与 dockerconfigjson 原文。
 
                 ## 5. 可能返回的错误
 
@@ -11040,7 +11220,7 @@ paths:
 
                 ## 4. 返回的详细说明
 
-                WebSocket 推送统一 Envelope 包裹的 watch event。事件 data 中的 Cluster DTO 与详情接口保持一致：`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；事件不返回 `password` 与 dockerconfigjson 原文。
+                WebSocket 推送统一 Envelope 包裹的 watch event。事件 data 中的 Cluster DTO 与详情接口保持一致：`spec.veleroInstall` 存在时返回 `imageRegistry`、`bslEndpoint`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；事件不返回 `password` 与 dockerconfigjson 原文。
 
                 ## 5. 可能返回的错误
 
@@ -11137,7 +11317,7 @@ paths:
 
                 ## 4. 返回的详细说明
 
-                WebSocket 推送统一 Envelope 包裹的 watch event。事件 data 中的 Cluster DTO 与详情接口保持一致：`spec.veleroInstall` 存在时返回 `imageRegistry`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；事件不返回 `password` 与 dockerconfigjson 原文。
+                WebSocket 推送统一 Envelope 包裹的 watch event。事件 data 中的 Cluster DTO 与详情接口保持一致：`spec.veleroInstall` 存在时返回 `imageRegistry`、`bslEndpoint`、`credentialConfigured`，并在管理平面 dockerconfigjson Secret 中可解析用户名时返回 `username`；事件不返回 `password` 与 dockerconfigjson 原文。
 
                 ## 5. 可能返回的错误
 
@@ -23987,7 +24167,7 @@ paths:
             description: |-
                 ## 1. 接口用来干什么
 
-                该接口对应 server handler `jwtMiddleware.LoginHandler`，用途需要在逐接口阶段结合 handler、request struct、response DTO 与 operator 调用链补齐。
+                该接口对应 server handler `jwtMiddleware.LoginHandler`，用于校验 `disaster-server-users` Secret 中的用户密码并签发 JWT access token 与 refresh token。首次启动或 Secret 缺少 `admin` 用户时，服务使用 `Softc@1024` 生成 bcrypt 哈希作为内置管理员初始密码；已有 `admin` 用户的密码哈希不会被启动初始化逻辑覆盖，存量账号应通过用户管理修改密码接口轮换。
 
                 ## 2. 控制哪些资源
 
@@ -24002,7 +24182,7 @@ paths:
 
                 ## 3. 入参的详细说明
 
-                请求字段 schema 已先生成骨架，字段中文含义、可传入值、传入目的、是否必传、约束与默认值需要在逐接口阶段补齐。
+                请求体必须包含 `username` 和 `password` 字符串。`password` 仅用于本次 bcrypt 校验，不会写入响应；默认管理员仅适用于新建或补齐用户 Secret 的场景。
 
                 ## 4. 返回的详细说明
 
@@ -24016,6 +24196,9 @@ paths:
             requestBody:
                 content:
                     application/json:
+                        example:
+                            username: admin
+                            password: Softc@1024
                         schema:
                             $ref: '#/components/schemas/GenericObject'
                 description: 请求体字段待逐接口按 server request struct 与 operator 调用链补齐。

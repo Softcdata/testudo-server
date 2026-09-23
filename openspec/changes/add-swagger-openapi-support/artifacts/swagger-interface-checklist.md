@@ -11,6 +11,14 @@
 > 类型。当前 MCP `update_target` 对 `websocket2` 返回成功但不实际修改 URL，
 > 这部分仍需通过 Apipost UI 或支持 websocket 目标的专用接口补迁移。
 
+## 2026-09-23 资源筛选格式兼容补充
+
+本次 `fix-velero-resource-filter-format` 变更已更新以下接口的 OpenAPI schema、请求字段、响应字段以及错误说明：
+
+- `GET /apis/appbackups.testudo.softcdata.com/v1/velero/backups/:backupName/includes`：新增 `VeleroBackupIncludesDTO`，声明 `includedResources` 使用 group-resource。
+- `POST /apis/apprestores.testudo.softcdata.com/v1/apprestores`：声明 `includedResources`、`excludedResources`、`existingResourcePolicy`，说明 GVK 兼容转换和 400 错误。
+- `PUT /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name`：声明 `includedResources`、`excludedResources`、`existingResourcePolicy`，说明 sourceCluster RESTMapper 转换和 400 错误。
+
 勾选规则：只有完成调用链取证、request schema、response schema、错误响应、扩展字段、Swagger UI 渲染检查后，才能将对应接口勾选为完成。
 
 ## Kubernetes 资源
@@ -216,6 +224,10 @@
 - [ ] `GET /apis/cluster.testudo.softcdata.com/v1/clusters/names` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
 - [ ] `GET /apis/cluster.testudo.softcdata.com/v1/watch/clusters` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
 - [ ] `GET /apis/cluster.testudo.softcdata.com/v1/watch/clusters/:name` - RunAPI：[已存在]；OpenAPI：[已补骨架]；Schema：[待确认]；错误：[待确认]；operator：[待取证]
+
+### 2026-09-22 集群专用 BSL endpoint 字段同步
+
+- `GET/POST/PATCH /apis/cluster.testudo.softcdata.com/v1/clusters...` 及两个 Cluster watch 接口已在本次变更中补充 `spec.veleroInstall.bslEndpoint` 的请求、响应、校验和 Operator 调用链语义；对应详细取证见 `openspec/changes/update-runapi-detail-description-standard/artifacts/interface-evidence.md`。
 
 ## 平台许可
 

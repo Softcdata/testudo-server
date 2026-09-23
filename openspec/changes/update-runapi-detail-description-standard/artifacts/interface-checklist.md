@@ -154,17 +154,17 @@
 - [x] `GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/backups/:backupName/download/stream` - RunAPI 状态：已新增；Target ID：`1cb020de89801000`；Handler：`c.downloadBackupStream`；类型：HTTP 二进制流；目标动作：补充五段详细说明、downloadToken 入参和流式响应语义；处理状态：已完成
 - [x] `GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/:name/history` - RunAPI 状态：已存在；Target ID：`1bd4dbb7f4401001`；Handler：`c.getBackupHistory`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
 - [x] `GET /apis/appbackups.testudo.softcdata.com/v1/appbackups/clusters` - RunAPI 状态：已存在；Target ID：`1be2239988801001`；Handler：`c.getAppBackupClusters`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
-- [x] `GET /apis/appbackups.testudo.softcdata.com/v1/velero/backups/:backupName/includes` - RunAPI 状态：已存在；Target ID：`1c30a700d3001001`；Handler：`c.getVeleroBackupIncludes`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
+- [x] `GET /apis/appbackups.testudo.softcdata.com/v1/velero/backups/:backupName/includes` - RunAPI 状态：已存在；Target ID：`1c30a700d3001001`；Handler：`c.getVeleroBackupIncludes`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证；2026-09-23 补充 GVK 到 group-resource 的 RESTMapper 转换契约和未知 GVK 500 错误
 - [x] `GET /apis/appbackups.testudo.softcdata.com/v1/watch/appbackups` - RunAPI 状态：已存在；Target ID：`2a418fe378c0a9`；Handler：`c.watchAppBackups`；类型：WebSocket；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
 - [x] `GET /apis/appbackups.testudo.softcdata.com/v1/watch/appbackups/:name` - RunAPI 状态：已存在；Target ID：`2aab0af7b0c0a6`；Handler：`c.watchAppBackup`；类型：WebSocket；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
 
 ## 应用恢复
 
 - [x] `GET /apis/apprestores.testudo.softcdata.com/v1/apprestores` - RunAPI 状态：已存在；Target ID：`34a0ae4978c001`；Handler：`c.appRestores`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
-- [x] `POST /apis/apprestores.testudo.softcdata.com/v1/apprestores` - RunAPI 状态：已存在；Target ID：`3ee6850478c056`；Handler：`c.createAppRestore`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
+- [x] `POST /apis/apprestores.testudo.softcdata.com/v1/apprestores` - RunAPI 状态：已存在；Target ID：`3ee6850478c056`；Handler：`c.createAppRestore`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证；2026-09-23 补充包含项/排除项 GVK 兼容、400 错误和创建成功响应示例
 - [x] `DELETE /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name` - RunAPI 状态：已存在；Target ID：`34a0ae4b38c008`；Handler：`c.deleteAppRestore`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
 - [x] `GET /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name` - RunAPI 状态：已存在；Target ID：`34a0ae49b8c002`；Handler：`c.appRestore`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
-- [x] `PUT /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name` - RunAPI 状态：已存在；Target ID：`3ee68504b8c058`；Handler：`c.updateAppRestore`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
+- [x] `PUT /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name` - RunAPI 状态：已存在；Target ID：`3ee68504b8c058`；Handler：`c.updateAppRestore`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证；2026-09-23 补充包含项/排除项 GVK 兼容、400 错误和更新成功响应示例
 - [x] `POST /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name/actions/:type` - RunAPI 状态：已存在；Target ID：`3c211cc3f8c006 | 3c211cc3f8c008`；Handler：`c.executeAction`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，两个目标均已回读验证
 - [x] `POST /apis/apprestores.testudo.softcdata.com/v1/apprestores/preflight/validate` - RunAPI 状态：已存在；Target ID：`1c385ce4c7801001`；Handler：`c.validateRestorePreflight`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
 - [x] `GET /apis/apprestores.testudo.softcdata.com/v1/watch/apprestores` - RunAPI 状态：已存在；Target ID：`34a10209f8c00c`；Handler：`c.watchAppRestores`；类型：WebSocket；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
@@ -245,6 +245,10 @@
 - [x] `GET /apis/cluster.testudo.softcdata.com/v1/clusters/names` - RunAPI 状态：已存在；Target ID：`1be22307d0001001`；Handler：`c.clusterNames`；类型：HTTP；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
 - [x] `GET /apis/cluster.testudo.softcdata.com/v1/watch/clusters` - RunAPI 状态：已存在；Target ID：`2667344638c320`；Handler：`c.watchClusters`；类型：WebSocket；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
 - [x] `GET /apis/cluster.testudo.softcdata.com/v1/watch/clusters/:name` - RunAPI 状态：已存在；Target ID：`2667d19538c36d`；Handler：`c.watchCluster`；类型：WebSocket；目标动作：补充五段详细说明并保留原说明；处理状态：已完成，已回读验证
+
+### 2026-09-22 集群专用 BSL endpoint
+
+- [x] `GET/POST/PATCH /apis/cluster.testudo.softcdata.com/v1/clusters...` - Server：已支持 `veleroInstall.bslEndpoint` 的 DTO、CRD 转换、校验、创建、PATCH 设置/清除和响应回显；OpenAPI：已新增 Cluster VeleroInstall/请求 schema；RunAPI HTTP：详情、列表、创建、PATCH 目标说明和响应示例已 live 更新并保留原说明；RunAPI websocket2：MCP 更新接口回读不持久化，未宣称 live 已更新；live raw body：当前 MCP 无安全替换接口，未覆盖既有请求 body，新增字段已写入 HTTP description 与本地证据
 
 ## 平台许可
 

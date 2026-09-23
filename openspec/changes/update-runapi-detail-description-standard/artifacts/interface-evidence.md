@@ -1306,6 +1306,7 @@
 - operator 链路：AppBackup operator 负责根据 `StorageRepository` 维护目标集群 Velero `BackupStorageLocation`，并通过 Velero `Schedule` 或一次性 `Backup` 生成下层 Velero Backup；该接口只读取这些下层结果，不触发新的备份动作
 - 下层资源链路：直接读取目标集群 Velero `Backup` 和可选 `BackupStorageLocation`；读取管理集群 `StorageRepository(disaster-system)` 和可选 CA `Secret`；优先生成对象存储 `<prefix>/backups/<backupName>/<backupName>-resource-list.json.gz` 的 2 分钟预签名 URL 并用 5 秒 HTTP 超时下载，prefix 来自 BSL `spec.objectStorage.prefix` 或默认 `cluster`；直接读取失败时创建临时 Velero `DownloadRequest(kind=BackupResourceList)`，最多等待 10 秒并在结束后尽力删除
 - 已写入内容：五段详细说明、path/query/header 入参、兼容 `clusterName` 行为、无 body 的事实、实际资源清单优先于 Backup Spec 的当前行为、缓存 key/TTL/resourceVersion 失效规则、StorageRepository/BSL/CA Secret/对象存储/DownloadRequest 链路、`includedNamespaces/includedResources` 排序与兜底规则、当前错误分类
+- 本次变更补充：BackupResourceList 中的 `apps/v1/Deployment`、`v1/ConfigMap` 由源集群 RESTMapper 转换为 `deployments.apps`、`configmaps`；已经是 group-resource 的值保持不变；成功解析但 GVK 无法映射时返回 500，不静默透传原始值。
 - 取证备注：旧 RunAPI 说明只写了来自 `Backup.spec.includedNamespaces/includedResources`；当前代码会优先解析实际 `BackupResourceList`，从 map key 生成资源类型，从 `namespace/name` 形式的资源实例字符串中提取 namespace，集群级资源如 `nodes: ["node-1"]` 不贡献 namespace；资源清单读取失败通常不返回错误，而是退回 Spec 字段
 - 主要错误点：path `backupName` 为空返回 `400 code=1000`；query `cluster` 和 `clusterName` 都为空返回 `400 code=1000`；目标集群 remote client 获取失败返回 `400 code=1000`；Velero Backup 不存在返回 `404 code=3004`；remote client getter 未初始化、读取 Backup 发生非 NotFound 错误或内部 handler 初始化异常返回 `500 code=5000`；对象存储、CA、DownloadRequest、下载和解析失败一般不作为 HTTP 错误同步返回
 
@@ -1358,6 +1359,7 @@
 - operator 链路：`AppRestoreReconciler` 添加 finalizer；跨集群恢复时根据 `sourceCluster/storageRepository` 在目标集群创建或刷新 Velero `BackupStorageLocation`；读取目标集群 Velero `Backup`；计算 `status.targetNamespaces`；同步源 AppBackup 的 `Manual/Schedule` 类型 label；创建资源修改规则 `ConfigMap`；创建目标集群 `velero` 命名空间下的 Velero `Restore(res-<AppRestore.name>)`；观测 Restore phase 后回写 `status.status/restoreStatus/reason/message/lastAction`；删除或取消时清理 Velero Restore、ResourceModifier ConfigMap 和部分 Pending 资源
 - 下层资源链路：创建接口同步读取管理集群 `AppBackup` 和 `Cluster`，并通过目标集群 client 校验 Velero `BackupStorageLocation`；operator 后续访问目标集群 Velero `Backup/Restore/PodVolumeRestore`、资源修改 `ConfigMap`、存储仓库对应 BSL 和实际业务资源
 - 已写入内容：五段详细说明、无 path/query 的事实、`name/backupSource/cluster` 必填、`backupName` 缺省推导、`existingResourcePolicy` 取值和校验时机、`timeout` 写入 `spec.template.itemOperationTimeout`、`storageClassMapping` 与 `scMapping` 兼容冲突规则、`restorePVs/cleanVolumes` 自动追加幂等 PVC `volumeName` 清理规则、StorageClass/IngressClass 映射、缩容/待机/无流量恢复规则、uploader 配置、创建成功 DTO 字段、operator 异步恢复边界、当前错误分类
+- 本次变更补充：`includedResources` 与 `excludedResources` 接受历史 GVK 输入，Server 在读取源 AppBackup 后使用源集群 RESTMapper 转换为 Velero group-resource；无法解析时返回 400 且不创建 AppRestore。新增 RunAPI 响应示例 `资源筛选 GVK 兼容创建成功`。
 - 取证备注：`cleanVolumes=true` 或 `restorePVs=true` 都会追加 PVC 清理规则；当前规则使用 JSON Patch `add /spec/volumeName` 且 value 为空字符串，避免字段不存在时 `remove` 失败导致 Velero Restore `PartiallyFailed`；update 会将 legacy `remove /spec/volumeName` 规范化为新的幂等规则。`scaleToZeroList` 和 `standbyList` 传单元素 `*` 时匹配全部，否则生成 workload 名称正则且当前代码不转义正则特殊字符；创建成功只代表 `AppRestore` CR 创建完成，不代表 Velero Restore 已完成；`existingResourcePolicy` 当前在 preflight 之后校验，非法值可能先触发目标集群前置校验
 - 主要错误点：JSON 绑定失败、必填缺失、StorageClass 映射冲突、源 AppBackup 缺少必要字段、未传 `backupName` 且源 AppBackup 无 history、目标集群不存在或非 Ready、目标集群 client 获取失败、preflight 异常或未通过、`existingResourcePolicy` 非法均返回 `400/500` 对应业务错误；源 AppBackup 不存在返回 `404 code=3004`；同名 AppRestore 返回 `409 code=3009`；创建 CR 非冲突错误返回 `500 code=5000`；JWT 失败返回 `401` 或中间件自定义普通 JSON；Velero Restore 创建失败、资源修改 ConfigMap 创建失败、恢复执行失败、PVR 卡住和恢复超时等 operator 异步问题不作为创建接口同步错误返回
 
@@ -1390,15 +1392,16 @@
 ## PUT /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name
 
 - RunAPI Target ID：`3ee68504b8c058`
-- RunAPI 状态：已存在，已更新详细说明，URL 保持为 `{{baseurl}}/apis/apprestores.testudo.softcdata.com/v1/apprestores/:name`，鉴权类型为继承项目鉴权，已补齐 `Authorization`/`Content-Type` header、path `name` 参数、当前合法 JSON body 示例、无 binding 必填 body 字段的 schema、200/400/404/409 响应示例，原说明已保留到 `## 原有说明`，已回读验证
+- RunAPI 状态：已存在，已更新详细说明，URL 保持为 `{{baseurl}}/apis/apprestores.testudo.softcdata.com/v1/apprestores/:name`，鉴权类型为继承项目鉴权，已补齐 `Authorization`/`Content-Type` header、path `name` 参数、当前合法 JSON body 示例、无 binding 必填 body 字段的 schema、200/400/404/409 响应示例，原说明已保留到 `## 原有说明`，已回读验证；2026-09-23 追加 `资源筛选缺少源集群` 的 400 响应示例并回读验证
 - server 路由：`internal/apis/app_restore/v1/router.go`
 - server handler：`internal/apis/app_restore/v1/handler.go`，`AppRestoreHandler.updateAppRestore`
-- 请求链路：`BindJSON(UpdateAppRestoreRequest)` -> 归一化 path `name` 和兼容 body `name` -> 校验 URL/body 名称一致 -> `resolveStorageClassMapping(storageClassMapping, scMapping)` -> 校验 `existingResourcePolicy` 只能为空、`none`、`update` -> `RetryOnConflict` 内 Get 现有 AppRestore -> `MergeToCRD` 合并非空/非 nil 字段 -> 追加 StorageClass/IngressClass/ScaleToZero/Standby ResourceModifierRule -> `cleanVolumes=true` 或 `restorePVs=true` 时确保幂等 PVC `volumeName` 清理规则并替换 legacy remove -> 更新 trace/user annotation -> 按需更新或删除 description annotation -> Update AppRestore -> `ConvertToAppRestoreDTO` -> `WriteSuccess(200)`
+- 请求链路：`BindJSON(UpdateAppRestoreRequest)` -> 归一化 path `name` 和兼容 body `name` -> 校验 URL/body 名称一致 -> `resolveStorageClassMapping(storageClassMapping, scMapping)` -> 校验 `existingResourcePolicy` 只能为空、`none`、`update` -> `RetryOnConflict` 内 Get 现有 AppRestore -> GVK 筛选使用最终 `backupSource` 对应的 sourceCluster（更换 backupSource 时读新 AppBackup；历史对象 sourceCluster 为空时读现有关联 AppBackup） -> 使用源集群 RESTMapper 转换 included/excluded resources，源集群无法确定或映射失败则返回 400 且不更新 -> `MergeToCRD` 合并非空/非 nil 字段 -> 追加 StorageClass/IngressClass/ScaleToZero/Standby ResourceModifierRule -> `cleanVolumes=true` 或 `restorePVs=true` 时确保幂等 PVC `volumeName` 清理规则并替换 legacy remove -> 更新 trace/user annotation -> 按需更新或删除 description annotation -> Update AppRestore -> `ConvertToAppRestoreDTO` -> `WriteSuccess(200)`
 - operator 链路：更新 AppRestore CR 后触发 reconcile；如果对象仍在 `Pending/Initiating/Restoring` 等阶段，operator 后续可能读取更新后的 `spec.cluster/spec.template/spec.resourceModifierRules`；如果 Velero Restore 已创建，很多 RestoreSpec 字段和 resource modifier 规则不会自动作用到已创建的 Velero Restore，通常需要配合动作接口 retry；已处于 `Succeeded/Failed/Cancelled` 等终态的对象不会因普通 spec 更新自动重置为 `Pending`
-- 下层资源链路：更新接口本身只读写管理集群 `AppRestore` CR，不访问源 AppBackup、目标 Cluster、目标集群、Velero API、BSL 或对象存储；operator 后续才可能根据更新后的 CR 访问目标集群 Velero Backup/Restore、ResourceModifier ConfigMap 和业务资源
+- 下层资源链路：常规 group-resource 更新只读写管理集群 `AppRestore` CR；请求包含 GVK 且现有 `sourceCluster` 为空，或请求更换 `backupSource` 时，server 会读取最终关联的管理集群 `AppBackup` 并获取源集群 client/RESTMapper；不会在此处访问目标集群 Velero API、BSL 或对象存储。operator 后续才可能根据更新后的 CR 访问目标集群 Velero Backup/Restore、ResourceModifier ConfigMap 和业务资源
 - 已写入内容：五段详细说明、无 query 的事实、path `name` 与 body `name` 兼容和冲突规则、所有可更新 body 字段、`description` 空字符串删除 annotation、数组/map 空值不会清空旧值、`cleanVolumes=false` 不删除已有清理规则、映射/缩容/待机规则追加而非替换、更新不做 Ready/preflight/源 AppBackup 校验、成功 DTO 字段、当前错误分类
+- 本次变更补充：`includedResources` 与 `excludedResources` 接受历史 GVK 输入，Server 优先使用现有 AppRestore `sourceCluster` 的 RESTMapper 转换为 Velero group-resource；历史 AppRestore 缺少 `sourceCluster` 或请求更换 backupSource 时，使用最终 `backupSource` 对应 AppBackup 的 `spec.cluster`；无法确定源集群或无法解析 GVK 时返回 400 且不更新 AppRestore，不会使用恢复目标集群映射。新增 RunAPI 响应示例 `资源筛选 GVK 兼容更新成功`、`资源筛选缺少源集群`，并追加源集群兼容边界说明后回读验证。
 - 取证备注：旧 RunAPI schema 把 body `name` 和 `cleanVolumes` 标成必填，与当前代码不符，已改为无 body 必填字段；`storageClassMapping/ingressClassMapping/scaleToZeroList/standbyList` 重复更新可能追加重复 rules，只有 PVC `volumeName` 清理规则会通过 `ensureCleanVolumeRule` 去重并规范化为 `add /spec/volumeName` 空值；Update 成功响应不直接返回 `spec.resourceModifierRules`
-- 主要错误点：JSON 绑定失败、资源名为空、URL/body 名称不一致、StorageClass 兼容字段冲突、`existingResourcePolicy` 非法返回 `400 code=1000`；AppRestore 不存在返回 `404 code=3004`；资源版本冲突多次重试后仍失败返回 `409 code=3009`；Get/Update 非 NotFound/Conflict 错误返回 `500 code=5000`；JWT 失败返回 `401` 或中间件自定义普通 JSON；更新后的源/目标/Velero 下层问题不作为本接口同步错误返回
+- 主要错误点：JSON 绑定失败、资源名为空、URL/body 名称不一致、StorageClass 兼容字段冲突、`existingResourcePolicy` 非法、sourceCluster 缺失时关联 AppBackup 不存在或源集群 client/RESTMapper 不可用、GVK 无法映射均返回 `400 code=1000`；AppRestore 不存在返回 `404 code=3004`；资源版本冲突多次重试后仍失败返回 `409 code=3009`；AppBackup 读取的其他 Kubernetes 错误和 AppRestore Get/Update 非 NotFound/Conflict 错误返回 `500 code=5000`；JWT 失败返回 `401` 或中间件自定义普通 JSON；更新后的目标/Velero 下层问题不作为本接口同步错误返回
 
 ## POST /apis/apprestores.testudo.softcdata.com/v1/apprestores/:name/actions/:type
 
@@ -2101,6 +2104,17 @@
 - 已写入内容：五段详细说明、WebSocket 而非 SSE 的事实、path `name` 语义、三种鉴权方式、field selector、连接成功/心跳/watch event/closed/timeout 消息 envelope、`veleroInstall.username` 可回显和 `password` 不回显、当前错误分类
 - 取证备注：ApiPost `websocket2` 目标回读时未保留普通 restful parameter 结构；path 参数语义已体现在 URL `:name` 和 description 中
 - 主要错误点：path `name` 为空时 handler 返回 `400 code=1000`；握手前 JWT 失败返回 `401/403`；WebSocket upgrade 失败返回普通 `500 {"message":"WebSocket 升级失败: <原因>"}`；已连接后 watcher 创建失败会通过 WebSocket 发送 `code=5000` error envelope
+
+## 2026-09-22 集群专用 BSL endpoint API 补充
+
+- 变更来源：`disaster-operator` 已实现 `Cluster.spec.veleroInstall.bslEndpoint`，server 需要把该物理集群配置贯通到 API。
+- server 请求链路：`CreateDisasterClusterRequest.VeleroInstall.BSLEndpoint` -> `validateBSLEndpoint` -> `CreateDisasterClusterRequest.ToCRD` -> `Cluster.spec.veleroInstall.bslEndpoint`；PATCH 使用指针区分未传、设置和空字符串清除。
+- server 响应链路：`ConvertSpecToDTO` / `convertToDisasterClusterDTO` 返回 `spec.veleroInstall.bslEndpoint`；该字段为非敏感配置，密码和 dockerconfigjson 原文仍不返回。
+- 校验：非空 endpoint 必须是带 host 的绝对 `http`/`https` URL；拒绝空 host、userinfo、query、fragment。非法值返回 `400 code=1000`，不写入 Cluster。
+- 生命周期边界：`imageRegistry`、registry credential 与 `bslEndpoint` 独立；清空 imageRegistry 时保留 endpoint；仅当所有 VeleroInstall 字段为空时清除整段配置。
+- 受影响接口：`GET/POST/PATCH /apis/cluster.testudo.softcdata.com/v1/clusters`、`GET /clusters/:name`、两个 Cluster watch 接口。
+- OpenAPI：已新增 `ClusterVeleroInstallRead`、`ClusterVeleroInstallWrite`、`ClusterVeleroInstallPatch`、`ClusterCreateRequest`、`ClusterPatchRequest` schema，并更新 Cluster 接口说明。
+- RunAPI live：已读取并更新 HTTP Target `3ee6850538c060`、`69ee1a0f8c0b7`、`25559f1f78c067`、`25559f1fb8c069`、`1bd502f9fe001000` 的 description，原说明保留在 `## 原有说明`，并追加包含 `bslEndpoint` 的成功响应示例。两个 `websocket2` Target `2667344638c320`、`2667d19538c36d` 的 MCP `update_target` 返回成功但回读不持久化 description，故未宣称 live 已更新；字段说明已同步到 OpenAPI 与本地证据。当前 MCP 不提供替换 JSON raw body 的接口，因此 HTTP 请求字段已在 description 和本地证据中同步，原有 body 未覆盖。
 
 ## POST /disasterjobs.testudo.softcdata.com/v1/jobs
 

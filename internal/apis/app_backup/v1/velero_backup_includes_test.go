@@ -20,6 +20,7 @@ import (
 	velerov1 "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
@@ -29,6 +30,11 @@ import (
 type staticReader struct {
 	backups map[string]*velerov1.Backup
 	bsls    map[string]*velerov1.BackupStorageLocation
+	mapper  meta.RESTMapper
+}
+
+func (r *staticReader) RESTMapper() meta.RESTMapper {
+	return r.mapper
 }
 
 func (r *staticReader) Get(ctx context.Context, key ctrlclient.ObjectKey, obj ctrlclient.Object, opts ...ctrlclient.GetOption) error {
@@ -198,6 +204,79 @@ func TestGetVeleroBackupIncludes_UsesActualResourceListWhenAvailable(t *testing.
 	assert.Equal(t, transport.CodeOK, resp.Code)
 	assert.Equal(t, []string{"ns-a", "ns-b"}, resp.Data.IncludedNamespaces)
 	assert.Equal(t, []string{"deployments.apps", "nodes", "pods"}, resp.Data.IncludedResources)
+}
+
+func TestGetVeleroBackupIncludes_ConvertsGVKResourceList(t *testing.T) {
+	backup := &velerov1.Backup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "velero-backup-gvk",
+			Namespace: common.VeleroNamespace,
+		},
+	}
+	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+		{Group: "apps", Version: "v1"},
+	})
+	mapper.AddSpecific(
+		schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"},
+		schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
+		schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployment"},
+		meta.RESTScopeNamespace,
+	)
+	remote := &staticReader{
+		backups: map[string]*velerov1.Backup{
+			common.VeleroNamespace + "/velero-backup-gvk": backup,
+		},
+		mapper: mapper,
+	}
+
+	h, _ := newMockHandler()
+	h.getRemoteClient = func(ctx context.Context, clusterName string) (ctrlclient.Reader, error) {
+		return remote, nil
+	}
+	h.fetchBackupResourceList = func(ctx context.Context, remote ctrlclient.Reader, backup *velerov1.Backup, httpClient *http.Client) (map[string][]string, error) {
+		return map[string][]string{"apps/v1/Deployment": {"ns-a/deploy-1"}}, nil
+	}
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{{Key: "backupName", Value: "velero-backup-gvk"}}
+	ctx.Request.URI().SetQueryString("cluster=cluster-a")
+
+	h.getVeleroBackupIncludes(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusOK, ctx.Response.StatusCode())
+	var resp struct {
+		Data VeleroBackupIncludesDTO `json:"data"`
+	}
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.Equal(t, []string{"deployments.apps"}, resp.Data.IncludedResources)
+}
+
+func TestGetVeleroBackupIncludes_RejectsUnresolvableGVK(t *testing.T) {
+	backup := &velerov1.Backup{
+		ObjectMeta: metav1.ObjectMeta{Name: "velero-backup-unknown", Namespace: common.VeleroNamespace},
+	}
+	remote := &staticReader{
+		backups: map[string]*velerov1.Backup{
+			common.VeleroNamespace + "/velero-backup-unknown": backup,
+		},
+		mapper: meta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "apps", Version: "v1"}}),
+	}
+	h, _ := newMockHandler()
+	h.getRemoteClient = func(ctx context.Context, clusterName string) (ctrlclient.Reader, error) {
+		return remote, nil
+	}
+	h.fetchBackupResourceList = func(ctx context.Context, remote ctrlclient.Reader, backup *velerov1.Backup, httpClient *http.Client) (map[string][]string, error) {
+		return map[string][]string{"example.io/v1/Widget": {"ns-a/widget-1"}}, nil
+	}
+
+	ctx := app.NewContext(16)
+	ctx.Params = param.Params{{Key: "backupName", Value: "velero-backup-unknown"}}
+	ctx.Request.URI().SetQueryString("cluster=cluster-a")
+
+	h.getVeleroBackupIncludes(context.Background(), ctx)
+
+	assert.Equal(t, consts.StatusInternalServerError, ctx.Response.StatusCode())
+	assert.Contains(t, string(ctx.Response.Body()), "example.io/v1/Widget")
 }
 
 func TestGetVeleroBackupIncludes_UsesStorageRepositoryCAForHTTPSDownload(t *testing.T) {

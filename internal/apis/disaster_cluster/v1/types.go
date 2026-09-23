@@ -38,12 +38,14 @@ type ImageSourceDTO struct {
 
 type VeleroInstallDTO struct {
 	ImageRegistry        string `json:"imageRegistry,omitempty"`
+	BSLEndpoint          string `json:"bslEndpoint,omitempty"`
 	Username             string `json:"username,omitempty"`
 	CredentialConfigured bool   `json:"credentialConfigured"`
 }
 
 type VeleroInstallWriteDTO struct {
 	ImageRegistry    string `json:"imageRegistry,omitempty"`
+	BSLEndpoint      string `json:"bslEndpoint,omitempty"`
 	Username         string `json:"username,omitempty"`
 	Password         string `json:"password,omitempty"`
 	RemoveCredential bool   `json:"removeCredential,omitempty"`
@@ -51,6 +53,7 @@ type VeleroInstallWriteDTO struct {
 
 type PatchVeleroInstallWriteDTO struct {
 	ImageRegistry    *string `json:"imageRegistry,omitempty"`
+	BSLEndpoint      *string `json:"bslEndpoint,omitempty"`
 	Username         *string `json:"username,omitempty"`
 	Password         *string `json:"password,omitempty"`
 	RemoveCredential *bool   `json:"removeCredential,omitempty"`
@@ -280,6 +283,7 @@ func convertVeleroInstallToDTO(spec *dapisv1.VeleroInstallSpec) *VeleroInstallDT
 	}
 	return &VeleroInstallDTO{
 		ImageRegistry:        spec.ImageRegistry,
+		BSLEndpoint:          spec.BSLEndpoint,
 		CredentialConfigured: spec.RegistryCredentialSecretRef != nil && spec.RegistryCredentialSecretRef.Name != "",
 	}
 }
@@ -289,10 +293,12 @@ func convertVeleroInstallWriteToCRD(spec *VeleroInstallWriteDTO) *dapisv1.Velero
 		return nil
 	}
 	imageRegistry := strings.Trim(strings.TrimSpace(spec.ImageRegistry), "/")
-	if imageRegistry == "" {
+	bslEndpoint := strings.TrimSpace(spec.BSLEndpoint)
+	if imageRegistry == "" && bslEndpoint == "" {
 		return nil
 	}
 	return &dapisv1.VeleroInstallSpec{
 		ImageRegistry: imageRegistry,
+		BSLEndpoint:   bslEndpoint,
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -102,6 +103,25 @@ func isManagedVeleroRegistrySecretRef(clusterName string, ref *corev1.LocalObjec
 
 func normalizeVeleroImageRegistry(registry string) string {
 	return strings.Trim(strings.TrimSpace(registry), "/")
+}
+
+func normalizeBSLEndpoint(endpoint string) string {
+	return strings.TrimSpace(endpoint)
+}
+
+func validateBSLEndpoint(endpoint string) error {
+	endpoint = normalizeBSLEndpoint(endpoint)
+	if endpoint == "" {
+		return nil
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.Hostname() == "" {
+		return fmt.Errorf("veleroInstall.bslEndpoint must be an absolute URL with http/https scheme and host")
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("veleroInstall.bslEndpoint must not contain user info, query, or fragment")
+	}
+	return nil
 }
 
 func validateVeleroInstallWriteRequest(imageRegistry, username, password string, removeCredential bool) error {
@@ -668,6 +688,11 @@ func (cluster *ClusterHandler) createCluster(c context.Context, ctx *app.Request
 			return
 		}
 		req.VeleroInstall.ImageRegistry = normalizeVeleroImageRegistry(req.VeleroInstall.ImageRegistry)
+		req.VeleroInstall.BSLEndpoint = normalizeBSLEndpoint(req.VeleroInstall.BSLEndpoint)
+		if err := validateBSLEndpoint(req.VeleroInstall.BSLEndpoint); err != nil {
+			transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), nil)
+			return
+		}
 	}
 	normalizedImageSources, err := normalizeClusterImageSources(req.ImageSources)
 	if err != nil {
@@ -733,7 +758,7 @@ func (cluster *ClusterHandler) createCluster(c context.Context, ctx *app.Request
 		body.Spec.VeleroInstall.RegistryCredentialSecretRef = secretRef
 		managedSecretCreated = created
 	}
-	if body.Spec.VeleroInstall != nil && body.Spec.VeleroInstall.ImageRegistry == "" && body.Spec.VeleroInstall.RegistryCredentialSecretRef == nil {
+	if body.Spec.VeleroInstall != nil && body.Spec.VeleroInstall.ImageRegistry == "" && body.Spec.VeleroInstall.BSLEndpoint == "" && body.Spec.VeleroInstall.RegistryCredentialSecretRef == nil {
 		body.Spec.VeleroInstall = nil
 	}
 
@@ -1056,12 +1081,22 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 	}
 	if req.VeleroInstall != nil {
 		effectiveImageRegistry := ""
+		effectiveBSLEndpoint := ""
 		if existing.Spec.VeleroInstall != nil {
 			effectiveImageRegistry = existing.Spec.VeleroInstall.ImageRegistry
+			effectiveBSLEndpoint = existing.Spec.VeleroInstall.BSLEndpoint
 		}
 		imageRegistryProvided := req.VeleroInstall.ImageRegistry != nil
 		if req.VeleroInstall.ImageRegistry != nil {
 			effectiveImageRegistry = normalizeVeleroImageRegistry(*req.VeleroInstall.ImageRegistry)
+		}
+		bslEndpointProvided := req.VeleroInstall.BSLEndpoint != nil
+		if bslEndpointProvided {
+			effectiveBSLEndpoint = normalizeBSLEndpoint(*req.VeleroInstall.BSLEndpoint)
+			if err := validateBSLEndpoint(effectiveBSLEndpoint); err != nil {
+				transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), nil)
+				return
+			}
 		}
 
 		usernameProvided := req.VeleroInstall.Username != nil
@@ -1080,17 +1115,20 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 			return
 		}
 
-		clearVeleroInstall := imageRegistryProvided && effectiveImageRegistry == ""
+		clearImageRegistry := imageRegistryProvided && effectiveImageRegistry == ""
 		clearCredential := removeCredential
 
-		if clearVeleroInstall {
+		if clearImageRegistry {
 			if oldManagedSecret {
 				if err := cluster.deleteManagedVeleroRegistrySecret(c, common.DisasterSystemNamespace, existing.Name); err != nil {
 					transport.WriteError(ctx, transport.CodeInternalServerError, err.Error(), nil)
 					return
 				}
 			}
-			existing.Spec.VeleroInstall = nil
+			if existing.Spec.VeleroInstall != nil {
+				existing.Spec.VeleroInstall.ImageRegistry = ""
+				existing.Spec.VeleroInstall.RegistryCredentialSecretRef = nil
+			}
 			updated = true
 		} else if imageRegistryProvided {
 			if existing.Spec.VeleroInstall == nil && effectiveImageRegistry != "" {
@@ -1099,6 +1137,13 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 			if existing.Spec.VeleroInstall != nil {
 				existing.Spec.VeleroInstall.ImageRegistry = effectiveImageRegistry
 			}
+			updated = true
+		}
+		if bslEndpointProvided {
+			if existing.Spec.VeleroInstall == nil {
+				existing.Spec.VeleroInstall = &dapisv1.VeleroInstallSpec{}
+			}
+			existing.Spec.VeleroInstall.BSLEndpoint = effectiveBSLEndpoint
 			updated = true
 		}
 
@@ -1116,7 +1161,7 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 			updated = true
 		}
 
-		if !clearVeleroInstall && clearCredential {
+		if !clearImageRegistry && clearCredential {
 			if oldManagedSecret {
 				if err := cluster.deleteManagedVeleroRegistrySecret(c, common.DisasterSystemNamespace, existing.Name); err != nil {
 					transport.WriteError(ctx, transport.CodeInternalServerError, err.Error(), nil)
@@ -1130,7 +1175,7 @@ func (cluster *ClusterHandler) patchCluster(c context.Context, ctx *app.RequestC
 			updated = true
 		}
 
-		if existing.Spec.VeleroInstall != nil && existing.Spec.VeleroInstall.ImageRegistry == "" && existing.Spec.VeleroInstall.RegistryCredentialSecretRef == nil {
+		if existing.Spec.VeleroInstall != nil && existing.Spec.VeleroInstall.ImageRegistry == "" && existing.Spec.VeleroInstall.BSLEndpoint == "" && existing.Spec.VeleroInstall.RegistryCredentialSecretRef == nil {
 			existing.Spec.VeleroInstall = nil
 		}
 	}

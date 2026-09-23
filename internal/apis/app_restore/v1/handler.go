@@ -2,6 +2,7 @@ package apprestore
 
 import (
 	"context"
+	goerrors "errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/softcdata/testudo-server/internal/service/verifier"
 	"github.com/softcdata/testudo-server/internal/transport"
 	watchutils "github.com/softcdata/testudo-server/internal/utils"
+	veleroresource "github.com/softcdata/testudo-server/internal/veleroresource"
 	"k8s.io/apimachinery/pkg/api/errors"
 	matev1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
@@ -359,6 +361,13 @@ func (h *AppRestoreHandler) createAppRestore(c context.Context, ctx *app.Request
 		transport.WriteError(ctx, transport.CodeBadRequest, fmt.Sprintf("AppBackup %s is missing required fields", body.Spec.BackupSource), nil)
 		return
 	}
+	normalizedIncluded, normalizedExcluded, err := h.normalizeRestoreResourceFilters(c, appBackup.Spec.Cluster, body.Spec.Template.IncludedResources, body.Spec.Template.ExcludedResources)
+	if err != nil {
+		transport.WriteError(ctx, transport.CodeBadRequest, err.Error(), nil)
+		return
+	}
+	body.Spec.Template.IncludedResources = normalizedIncluded
+	body.Spec.Template.ExcludedResources = normalizedExcluded
 	// Fill SourceCluster
 	body.Spec.SourceCluster = appBackup.Spec.Cluster
 	body.Spec.StorageRepository = appBackup.Spec.Template.StorageLocation
@@ -521,8 +530,34 @@ func (h *AppRestoreHandler) updateAppRestore(c context.Context, ctx *app.Request
 			return err
 		}
 
+		sourceCluster := strings.TrimSpace(existing.Spec.SourceCluster)
+		backupSource := strings.TrimSpace(existing.Spec.BackupSource)
+		if requestedBackupSource := strings.TrimSpace(req.BackupSource); requestedBackupSource != "" && requestedBackupSource != backupSource {
+			backupSource = requestedBackupSource
+			sourceCluster = ""
+		}
+		if sourceCluster == "" && veleroresource.NeedsRESTMapper(req.IncludedResources, req.ExcludedResources) {
+			if backupSource == "" {
+				return &resourceFilterValidationError{err: fmt.Errorf("source cluster is required to resolve GVK resource filters")}
+			}
+			appBackup, backupErr := h.DisasterClient.DisasterV1().AppBackups(common.DisasterSystemNamespace).Get(c, backupSource, matev1.GetOptions{})
+			if backupErr != nil {
+				return &resourceFilterValidationError{err: fmt.Errorf("failed to get source AppBackup %q for resource filter mapping: %w", backupSource, backupErr)}
+			}
+			if appBackup != nil {
+				sourceCluster = strings.TrimSpace(appBackup.Spec.Cluster)
+			}
+		}
+		normalizedIncluded, normalizedExcluded, err := h.normalizeRestoreResourceFilters(c, sourceCluster, req.IncludedResources, req.ExcludedResources)
+		if err != nil {
+			return &resourceFilterValidationError{err: err}
+		}
+		normalizedReq := req
+		normalizedReq.IncludedResources = normalizedIncluded
+		normalizedReq.ExcludedResources = normalizedExcluded
+
 		// Update Spec
-		req.MergeToCRD(&existing.Spec)
+		normalizedReq.MergeToCRD(&existing.Spec)
 
 		if len(effectiveSCMapping) > 0 {
 			existing.Spec.ResourceModifierRules = append(existing.Spec.ResourceModifierRules, resourcemodifier.SCMapping(effectiveSCMapping)...)
@@ -567,6 +602,11 @@ func (h *AppRestoreHandler) updateAppRestore(c context.Context, ctx *app.Request
 	})
 
 	if err != nil {
+		var resourceFilterErr *resourceFilterValidationError
+		if goerrors.As(err, &resourceFilterErr) {
+			transport.WriteError(ctx, transport.CodeBadRequest, resourceFilterErr.Error(), nil)
+			return
+		}
 		if errors.IsNotFound(err) {
 			transport.WriteError(ctx, transport.CodeNotFound, err.Error(), nil)
 			return
