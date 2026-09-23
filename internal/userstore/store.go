@@ -25,7 +25,7 @@ const (
 	StatusActive     = "active"
 	StatusDisabled   = "disabled"
 	DefaultAdminUser = "admin"
-	DefaultAdminPass = "123456"
+	DefaultAdminPass = "Softc@1024"
 	DefaultAdminMail = "admin@example.com"
 )
 

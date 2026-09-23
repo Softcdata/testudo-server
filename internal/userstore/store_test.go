@@ -32,7 +32,43 @@ func TestEnsureInitializedCreatesAdminSecret(t *testing.T) {
 	assert.Equal(t, RoleAdmin, admin.Role)
 	assert.Equal(t, StatusActive, admin.Status)
 	assert.NotEmpty(t, admin.PasswordHash)
+	require.NoError(t, VerifyPassword(admin.PasswordHash, DefaultAdminPass))
 	assert.GreaterOrEqual(t, doc.NextUserID, int64(2))
+}
+
+func TestEnsureInitializedPreservesExistingAdminPassword(t *testing.T) {
+	passwordHash, err := HashPassword("already-rotated-password")
+	require.NoError(t, err)
+
+	raw := mustMarshalUsersDoc(t, &UsersDocument{
+		SchemaVersion: SchemaVersion,
+		NextUserID:    2,
+		Users: map[string]UserRecord{
+			DefaultAdminUser: {
+				ID:           1,
+				Username:     DefaultAdminUser,
+				Email:        DefaultAdminMail,
+				Role:         RoleAdmin,
+				Status:       StatusActive,
+				PasswordHash: passwordHash,
+			},
+		},
+	})
+
+	cli := fake.NewSimpleClientset(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: UserSecretName, Namespace: testNamespace},
+		Type:       corev1.SecretTypeOpaque,
+		Data:       map[string][]byte{UserSecretKey: raw},
+	})
+
+	require.NoError(t, NewKubeStore(cli, testNamespace).EnsureInitialized(context.Background()))
+
+	secret, err := cli.CoreV1().Secrets(testNamespace).Get(context.Background(), UserSecretName, metav1.GetOptions{})
+	require.NoError(t, err)
+	admin := decodeUsersDocFromSecret(t, secret).Users[DefaultAdminUser]
+	assert.Equal(t, passwordHash, admin.PasswordHash)
+	require.NoError(t, VerifyPassword(admin.PasswordHash, "already-rotated-password"))
+	assert.Error(t, VerifyPassword(admin.PasswordHash, DefaultAdminPass))
 }
 
 func TestEnsureInitializedBackfillsMissingAdmin(t *testing.T) {
@@ -67,8 +103,9 @@ func TestEnsureInitializedBackfillsMissingAdmin(t *testing.T) {
 	updated, err := cli.CoreV1().Secrets(testNamespace).Get(context.Background(), UserSecretName, metav1.GetOptions{})
 	require.NoError(t, err)
 	doc := decodeUsersDocFromSecret(t, updated)
-	_, ok := doc.Users[DefaultAdminUser]
+	admin, ok := doc.Users[DefaultAdminUser]
 	require.True(t, ok)
+	require.NoError(t, VerifyPassword(admin.PasswordHash, DefaultAdminPass))
 	assert.GreaterOrEqual(t, doc.NextUserID, int64(10))
 }
 
